@@ -85,13 +85,6 @@ static inline bool mqtt_linkage(const mqtt_account_t *a, const char *root, char 
     if (a->mode) return mqtt_format(out,n,"phicomm/linkage/%s/%s",a->key,root);
     return mqtt_format(out,n,"%s",root);
 }
-static inline const char *mqtt_announcement(const mqtt_account_t *a)
-{
-    if (!a->mode) return "{\"schema\":1,\"model\":\"tc1\",\"protocol\":\"legacy\",\"protocol_version\":1,\"version\":\"v1\"}";
-    if (!strcmp(a->model,"tc1")) return "{\"schema\":1,\"model\":\"tc1\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}";
-    if (!strcmp(a->model,"m1")) return "{\"schema\":1,\"model\":\"m1\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}";
-    return "{\"schema\":1,\"model\":\"a1\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}";
-}
 static inline const char *mqtt_status_name(unsigned state)
 {
     static const char *names[] = {"disconnected","connecting","config_error","auth_failed","waiting_acl","ready"};

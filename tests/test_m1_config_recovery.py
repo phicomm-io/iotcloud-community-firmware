@@ -83,6 +83,10 @@ void service_event(const char *level,const char *domain,const char *event) {
 }
 '''
             product += function(main, 'void appRestoreDefault_callback(')
+            product += '#define AUTH_STORE (((app_storage_t *)app_config)->local_auth)\n'
+            product += 'ph_auth_state *device_local_auth(void) { return NULL; }\n'
+            product += main[main.index('typedef struct {const m1_config_t *config;'):main.index('void m1_co2_config_get(')]
+            product += function(main, 'static bool m1_reset_commit(')
             product += function(main, 'bool m1_reset(')
             gate = main.index('    if (app_config->magic != M1_CONFIG_MAGIC')
             product += 'static void boot_gate(void) {\n' + main[gate:main.index('    bool migration_changed', gate)] + '}\n'
@@ -91,7 +95,7 @@ void service_event(const char *level,const char *domain,const char *event) {
             probe, binary = temporary / 'product.c', temporary / 'probe'
             probe.write_text(product)
             subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu99', '-O1', '-g', '-fno-omit-frame-pointer',
-                            '-fsanitize=address,undefined', *includes, str(probe), str(sdk_probe), '-o', str(binary)], check=True)
+                            '-fsanitize=address,undefined', *includes, str(probe), str(sdk_probe), str(ROOT / 'common/local_auth.c'), '-o', str(binary)], check=True)
             environment = os.environ.copy()
             environment.update(ASAN_OPTIONS='detect_leaks=1:abort_on_error=1', UBSAN_OPTIONS='halt_on_error=1')
             subprocess.run([str(binary)], env=environment, check=True)

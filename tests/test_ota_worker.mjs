@@ -42,3 +42,52 @@ test('reviewed note data uses a short-lived pointer and immutable hashed manifes
  for(const path of ['/releases/notes/private.json','/releases/notes/manifest.short.json','/releases/notes/index.json/extra'])
   assert.equal((await worker.fetch(new Request('https://ota'+path),storage)).status,404);
 });
+
+test('v1 binary metadata follows one stable index with exact GET/HEAD bytes',async()=>{
+ const payload=Buffer.from([0x81,0xa6,...Buffer.from('schema'),0x01]);
+ const path='/releases/v1.0.0/phicomm_m1.latest.msgpack';
+ const release={tag:'v1.0.0',version:'1.0.0',models:{m1:{path:'/releases/v1.0.0/image.signed'}},device_manifests:{'m1/full':{msgpack:{path,size:payload.length,sha256:'a'.repeat(64)}}}};
+ const storage={RELEASES:{async get(key){
+  if(key==='stable.json')return {json:async()=>release};
+  if(key===path.slice(1))return {size:payload.length,body:payload,httpEtag:'"manifest"'};
+  return null;
+ }}};
+ for(const method of ['GET','HEAD']){
+  const response=await worker.fetch(new Request('http://ota/ota/v1/m1/full/latest.msgpack',{method}),storage);
+  assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'application/msgpack');
+  assert.equal(response.headers.get('Content-Length'),String(payload.length));
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),method==='HEAD'?Buffer.alloc(0):payload);
+ }
+ delete release.device_manifests;
+ assert.equal((await worker.fetch(new Request('http://ota/ota/v1/m1/full/latest.msgpack'),storage)).status,404);
+ assert.equal((await worker.fetch(new Request('http://ota/ota/candidate/m1/full/latest.msgpack'),storage)).status,404);
+});
+
+test('G3 candidate binary updates stay separate from stable and reject other variants',async()=>{
+ const data=Buffer.from([0x81,0xa6,...Buffer.from('schema'),1]),tag='v1.0.0-rc.6';
+ const path=`/releases/${tag}/daikin_BRY88BBA15G.latest.msgpack`;
+ const candidate={tag,version:tag.slice(1),channel:'candidate',prerelease:true,models:{bry88bba15g:{path:`/releases/${tag}/daikin_BRY88BBA15G.ota.bin.signed`,size:200}},device_manifests:{'bry88bba15g/full':{msgpack:{path,size:data.length}}}};
+ const reads=[],storage={RELEASES:{async get(key){reads.push(key);if(key==='releases/candidates.json')return {json:async()=>({releases:[candidate]})};if(key===path.slice(1))return {body:data,size:data.length,httpEtag:'"candidate"',writeHttpMetadata(){}};return null;}}};
+ for(const method of ['GET','HEAD']){const r=await worker.fetch(new Request('https://ota/ota/candidate/bry88bba15g/full/latest.msgpack',{method}),storage);assert.equal(r.status,200);assert.equal(r.headers.get('Content-Length'),String(data.length));assert.deepEqual(Buffer.from(await r.arrayBuffer()),method==='HEAD'?Buffer.alloc(0):data);}
+ assert(!reads.includes('stable.json'));
+ assert.equal((await worker.fetch(new Request('https://ota/ota/v1/bry88bba15g/full/latest.msgpack'),storage)).status,404);
+ for(const variant of ['hub','no-frontend-resources','fresh-air'])assert.equal((await worker.fetch(new Request(`https://ota/ota/candidate/bry88bba15g/${variant}/latest.msgpack`),storage)).status,404);
+ const r=await worker.fetch(new Request('https://ota'+path),storage);assert.equal(r.status,200);assert.match(r.headers.get('Cache-Control'),/31536000/);
+ candidate.models={};assert.equal((await worker.fetch(new Request('https://ota/ota/candidate/bry88bba15g/full/latest.msgpack'),storage)).status,404);
+});
+
+test('S30 native RBL metadata follows its channel and rejects signed-image variants',async()=>{
+ const tag='v1.0.0-rc.6',path=`/releases/${tag}/BL2028N.latest.msgpack`,data=Buffer.from('S30 metadata');
+ const release={tag,version:tag.slice(1),channel:'candidate',prerelease:true,
+  models:{s30:{path:`/releases/${tag}/BL2028N_OTA_${tag.slice(1)}.rbl`}},
+  device_manifests:{'s30/full':{msgpack:{path,size:data.length}}}};
+ const storage={RELEASES:{async get(key){
+  if(key==='releases/candidates.json')return {json:async()=>({releases:[release]})};
+  if(key===path.slice(1))return {body:data,size:data.length,httpEtag:'"s30"'};
+  return null;
+ }}};
+ const response=await worker.fetch(new Request('http://ota/ota/candidate/s30/full/latest.msgpack'),storage);
+ assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),data);
+ for(const route of ['/ota/v1/s30/full/latest.msgpack','/ota/s30/latest.json','/ota/candidate/s30/hub/latest.msgpack'])
+  assert.equal((await worker.fetch(new Request('http://ota'+route),storage)).status,404);
+});

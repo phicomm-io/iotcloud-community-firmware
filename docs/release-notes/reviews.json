@@ -3190,6 +3190,776 @@
         "v1.0.0-rc.3:b063",
         "v1.0.0-rc:b025"
       ]
+    },
+    "v1.0.0-rc.4:b001": {
+      "block_sha256": "6741231947d827dd092375960123e2e7d61ede1539c66373af48bbfc28a6454d",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b001"
+      ]
+    },
+    "v1.0.0-rc.4:b002": {
+      "block_sha256": "8364e038f3a043114e8fec1f3d3e7b0264836a859ad2dd31343368b81ac821ec",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b002"
+      ]
+    },
+    "v1.0.0-rc.4:b003": {
+      "block_sha256": "45f875db254e9b06fde0857f03cc97eb18d5d05cefafd83a4df95f3fe081bf33",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "openiot-binary-default@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b003"
+      ]
+    },
+    "v1.0.0-rc.4:b004": {
+      "block_sha256": "e06fa0864fdb5e4bfa49a7bce7c359d85055b701124b46e6d3fc7c62e3d966c7",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b004"
+      ]
+    },
+    "v1.0.0-rc.4:b005": {
+      "block_sha256": "a0c3cde0d51ce699e4699fb13870c6529e45ab8b0197702eab29326b7d3f4a96",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "business-status-diagnostics-cache@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b005"
+      ]
+    },
+    "v1.0.0-rc.4:b006": {
+      "block_sha256": "70836192b8c677d6e27764287addaed9b99144af39350c74bd61f0f457958d72",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b006"
+      ]
+    },
+    "v1.0.0-rc.4:b007": {
+      "block_sha256": "3b9923fb77d504ce309efd13a5b8511895a76a2f4aa7e0dfd8ec8277a2f9fe64",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "web-request-coordination@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b007"
+      ]
+    },
+    "v1.0.0-rc.4:b008": {
+      "block_sha256": "d1cf59e4b851e5147caa0d573ec60813ed435cfa5515c9fdfb8d231f59069525",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b008"
+      ]
+    },
+    "v1.0.0-rc.4:b009": {
+      "block_sha256": "3cfc571c069542546b8e63475b6bc34cf07ea60bc3f9da587e2951ffc2cd0b26",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "mqtt-busy-recovery@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b009"
+      ]
+    },
+    "v1.0.0-rc.4:b010": {
+      "block_sha256": "a1a8ceaaa28638f7d8ee268065b60eb9d931f653a34f8ffc96f62a755ed9dc75",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b010"
+      ]
+    },
+    "v1.0.0-rc.4:b011": {
+      "block_sha256": "3eaf9c7d10c882b9906fa2b60114cc0be61e49e9c070ecae13cada9d02650b6a",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "authenticated-lan-v4@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b011"
+      ]
+    },
+    "v1.0.0-rc.4:b012": {
+      "block_sha256": "d3dec17b3c0e2dd90c0eb6a8ab214ddb8095b75086644ee295c59d5b680eb887",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b012"
+      ]
+    },
+    "v1.0.0-rc.4:b013": {
+      "block_sha256": "207d2e56569f5196ffdf291a8c08a10e4d7c0da8e65ec845855b5863deb19158",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "hub-mdns-udp-runtime@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b013"
+      ]
+    },
+    "v1.0.0-rc.4:b014": {
+      "block_sha256": "e70a93915212db6e2789dbb411e45845d791fd379915c801c75c757dce5de5cb",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b014"
+      ]
+    },
+    "v1.0.0-rc.4:b015": {
+      "block_sha256": "6a997e21caddeafe8ba97d449c8c2ef88e849555ffc71eca98bb90ce35f3d65c",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "webui-auth-and-config-recovery@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b015"
+      ]
+    },
+    "v1.0.0-rc.4:b016": {
+      "block_sha256": "75507dc39ec71d20b9cad55e369358d6b5e709010e43d4ab4feb01d16ad70dd4",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b016"
+      ]
+    },
+    "v1.0.0-rc.4:b017": {
+      "block_sha256": "85b79ee9322ffb5048ef01cbc6de115d9461fb815d986f82f8afbdb2d14bc039",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "compact-builds-and-hostnames@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b017"
+      ]
+    },
+    "v1.0.0-rc.4:b018": {
+      "block_sha256": "79d46aaaa7ca4a3e76321db4b869cb6d788641755e5a64a8de19c92b91274bba",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b018"
+      ]
+    },
+    "v1.0.0-rc.4:b019": {
+      "block_sha256": "09900eca00427657784714d2aa31c63ea01a94c75f03684c232738251c6999f9",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "approved",
+      "reason": "作者逐项核对中英文与当前实现；不声称独立审查。",
+      "change_refs": [
+        "s30-v1b-native-support@1.0.0-rc.4"
+      ],
+      "basis": [
+        "v1.0.0-rc.4:b019"
+      ]
+    },
+    "v1.0.0-rc.4:b020": {
+      "block_sha256": "5d0a3d5e9d14653206e1bc8b1ca11189e5b285119ed6971e706da2c3271e3198",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b020"
+      ]
+    },
+    "v1.0.0-rc.4:b021": {
+      "block_sha256": "feff291cef1bfeedb7e11172e8dfe783d0b191acb32f194cf0fb73df13ddc8e3",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b021"
+      ]
+    },
+    "v1.0.0-rc.4:b022": {
+      "block_sha256": "e9b35f1f5f99f734e5ac7d76bf06cce45e1f125812ae6672d5e657299d5150bc",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b022"
+      ]
+    },
+    "v1.0.0-rc.4:b023": {
+      "block_sha256": "c8de7f141d1ef2e313bf710849b058f83823b89c73a9bdefdc83f3d0bcd25192",
+      "release_sha256": "5c8a8fb2e932acd5c51297d2d95b7739db7213b76418b6d0dc482e488f4fd583",
+      "status": "excluded",
+      "reason": "版本说明、标题、链接或验证边界；保留原文，不重复计算为用户功能。",
+      "change_refs": [],
+      "basis": [
+        "v1.0.0-rc.4:b023"
+      ]
+    },
+    "v1.0.0-rc.5:b001": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b001"
+      ],
+      "change_refs": [],
+      "block_sha256": "3c42f2478c7b1628757cf56965b14b56b3c10395d7cc62dade5ddd1d78e49a4d",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b002": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b002"
+      ],
+      "change_refs": [],
+      "block_sha256": "f8f9cec5002d837650cd81adcc96491eea87fa229313bdfc4fcbb11bae4e2bfd",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b003": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b003"
+      ],
+      "change_refs": [
+        "hub-shared-web-auth@1.0.0-rc.5"
+      ],
+      "block_sha256": "73da06ee45f61207b0906c084c3081592cb7f0bb7e9b46e07c53ec0fc3b7b299",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b004": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b004"
+      ],
+      "change_refs": [],
+      "block_sha256": "15f3556899e359423359d96af8d09cd37499835eba7ce27112e4a7813f09a93f",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b005": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b005"
+      ],
+      "change_refs": [
+        "hub-device-http-udp-transport@1.0.0-rc.5"
+      ],
+      "block_sha256": "ba77d6e99942264649db39e8362486a11c8098bd45d864bde1fae5508c74b284",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b006": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b006"
+      ],
+      "change_refs": [],
+      "block_sha256": "3917c70cab19da51546dc81e27fb1b3255910237a2ddb61c3146869de713b659",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b007": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b007"
+      ],
+      "change_refs": [
+        "device-name-homekit-sync@1.0.0-rc.5"
+      ],
+      "block_sha256": "fbe1d0d7cc7957a15d941fbaaa447a484f7db64c1aaeeb316e39f77791324b59",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b008": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b008"
+      ],
+      "change_refs": [],
+      "block_sha256": "bb3031c1c74d138516d4d98267ee0b6f77d017ddd773791db2817035d28a9135",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b009": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b009"
+      ],
+      "change_refs": [
+        "dispatch-auth-and-control-receipts@1.0.0-rc.5"
+      ],
+      "block_sha256": "6bac74ff0c59204b12c92cba73a8e0499cd00426d1e4385fe00c786399c2899b",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b010": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b010"
+      ],
+      "change_refs": [
+        "hub-homekit-stack-restart@1.0.0-rc.5"
+      ],
+      "block_sha256": "760864f3d9914b5ec88c5bf059874e6d5de8545d35d515543a9b2cbf4625df0a",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b011": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b011"
+      ],
+      "change_refs": [],
+      "block_sha256": "6667b94e2a763caab1697996703f4d03a8e188e5643529e9ac7542d139c84f50",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b012": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b012"
+      ],
+      "change_refs": [
+        "tc1-mqtt-and-s30-lan@1.0.0-rc.5"
+      ],
+      "block_sha256": "e22c123602743847ae690d7a94ad444cc639f56c9df6e6101b8bc0007600071f",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b013": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b013"
+      ],
+      "change_refs": [],
+      "block_sha256": "b2e3d47e98272f0932aabd86abb71d63ecb773a4e78b82cd69be17775bf27e70",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b014": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b014"
+      ],
+      "change_refs": [
+        "hub-pair-route-atomic@1.0.0-rc.5"
+      ],
+      "block_sha256": "86642effb60961b9707b9850f7a44c599ade772b599039c97428609455ea9c1e",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b015": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b015"
+      ],
+      "change_refs": [],
+      "block_sha256": "db93c58ee0e2ea27e00434eb356e438c40e1235cffcf3ced1eedd6a4276e81b3",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b016": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b016"
+      ],
+      "change_refs": [
+        "web-generation-and-utc@1.0.0-rc.5"
+      ],
+      "block_sha256": "0172f26564a990575f2ff5fb08936a1a7f8de5eb10ff6c6f9ea5f021f4798f7c",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b017": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b017"
+      ],
+      "change_refs": [],
+      "block_sha256": "8b93101dd078f58f7904a6d78debfd7f831b24f96be153dd392b14d0fd4b5d54",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b018": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b018"
+      ],
+      "change_refs": [
+        "s30-power-and-sensor@1.0.0-rc.5"
+      ],
+      "block_sha256": "833a6be73a330b66a760696c59213348f5a8f701e3e8f6e65088055905fdc72a",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b019": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b019"
+      ],
+      "change_refs": [],
+      "block_sha256": "e40e1c253595baa23879912562aa55d2aa87b252e32a3c6ec65649b946a55b53",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b020": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b020"
+      ],
+      "change_refs": [
+        "tc1-local-power-rules@1.0.0-rc.5"
+      ],
+      "block_sha256": "e0dcf3d793740a0e85bc9d425dfe284a46c330fce3fe2b5639ff3436d86c2baa",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b021": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b021"
+      ],
+      "change_refs": [],
+      "block_sha256": "b2f2086b14034a213b8bc01966848cdd1087def155e1b34208d17eb1da530c5d",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b022": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b022"
+      ],
+      "change_refs": [
+        "s30-wifi-storage-recovery@1.0.0-rc.5"
+      ],
+      "block_sha256": "c15538f9cf88d3381b0557c23c2ae7e700560a453224503fc3bc2f6c7a11b339",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b023": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b023"
+      ],
+      "change_refs": [],
+      "block_sha256": "39785521ad64b302bf59080e9ab04dfb403c3ad33a31c1b825c9010dca1ce95c",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b024": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.5:b024"
+      ],
+      "change_refs": [
+        "web-ota-availability-guard@1.0.0-rc.5"
+      ],
+      "block_sha256": "b4527cc5591499ae03b6c89b200f86408fa2d967c31e389a43e5538ec9de678c",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b025": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b025"
+      ],
+      "change_refs": [],
+      "block_sha256": "bbeeaee90bc0a5d2bcf4cf48f9d734017a35f692e352935df63faea4cd51fddc",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b026": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b026"
+      ],
+      "change_refs": [],
+      "block_sha256": "d9d86e8281e4e823889595da59ca08a2bfdf96ecb0853e189b371c8722ed1448",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b027": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b027"
+      ],
+      "change_refs": [],
+      "block_sha256": "756e240826e7ad4ddbf3b42ed8aa4bccd7eaa6b1a7ef880a4c624d9c797b04b9",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b028": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b028"
+      ],
+      "change_refs": [],
+      "block_sha256": "f681478a058b340931bd7e60d5a3ca9bf5f702ba2432e463aea6dc9870b18b96",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.5:b029": {
+      "status": "excluded",
+      "reason": "Heading, version requirement, usage limitation or download link.",
+      "basis": [
+        "v1.0.0-rc.5:b029"
+      ],
+      "change_refs": [],
+      "block_sha256": "9473ec7eeef919fbb18b94398185b011cf917d1cc20b82812ab5e557b203aaf2",
+      "release_sha256": "54e9cdd15f0acc61e7428d594ecc3d715ce316edb1882efc0fd3c8102fe9fcaa"
+    },
+    "v1.0.0-rc.6:b001": {
+      "status": "excluded",
+      "reason": "Release channel, upgrade conditions or download link.",
+      "basis": [
+        "v1.0.0-rc.6:b001"
+      ],
+      "change_refs": [],
+      "block_sha256": "b663d453d755ebc350efb0fb3bdb8a9e3e6d6f67648fcad0ca0e0cad3729e60c",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b002": {
+      "status": "excluded",
+      "reason": "Release channel, upgrade conditions or download link.",
+      "basis": [
+        "v1.0.0-rc.6:b002"
+      ],
+      "change_refs": [],
+      "block_sha256": "6f3c1e7ee7d908f9110ec0b2edef44459143e22886cca328c3958d53392f2614",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b003": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b003"
+      ],
+      "change_refs": [
+        "g3-screen-platform@1.0.0-rc.6"
+      ],
+      "block_sha256": "0a43594453f26c8b3c2152cc2c1e8e6f4c3826b6a10973558091c5edc29ed773",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b004": {
+      "status": "approved",
+      "reason": "Reviewed weather 1x4/2x4, clock 1x4 and reading 1x2 as rows by columns, matching WebUI and MCU codecs.",
+      "basis": [
+        "v1.0.0-rc.6:b004"
+      ],
+      "change_refs": [
+        "g3-layout-theme-weather@1.0.0-rc.6"
+      ],
+      "block_sha256": "2e3147dce8e4bf67ab0eb14de7e9869c84404b3b25dcec84f5134fd11d673aa6",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b005": {
+      "status": "approved",
+      "reason": "Reviewed paired ESP32 and MCU installation policy, preserved original bootloader and matching Chinese and English text.",
+      "basis": [
+        "v1.0.0-rc.6:b005"
+      ],
+      "change_refs": [
+        "g3-online-update@1.0.0-rc.6"
+      ],
+      "block_sha256": "0e65b3f4410baf7438bcba8105c1b9db004b0e39e36526bc4e911faad407e2d5",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b006": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b006"
+      ],
+      "change_refs": [
+        "m1-clock-retry@1.0.0-rc.6"
+      ],
+      "block_sha256": "4ab9cf1ba111ea59699ac82b79633a57580d2a9151b0efeec4ad7064036f7be3",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b007": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b007"
+      ],
+      "change_refs": [
+        "s30-clock-automation-stock-ota@1.0.0-rc.6"
+      ],
+      "block_sha256": "e86de3a4791909e88e82dc34425455d37e336101bc217b1c3507f24e7f9352be",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b008": {
+      "status": "approved",
+      "reason": "Reviewed implementation, device scope and bilingual behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b008"
+      ],
+      "change_refs": [
+        "shared-power-web-demos@1.0.0-rc.6"
+      ],
+      "block_sha256": "d4cb259d5291d73595734f4dfa55daae9368ab4f232d44db35f16865532c0b49",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b009": {
+      "status": "approved",
+      "reason": "Reviewed quad NOR policy, successful wallpaper readback, sensor resumption and two consecutive device OTA installations.",
+      "basis": [
+        "v1.0.0-rc.6:b009"
+      ],
+      "change_refs": [
+        "g3-nor-wallpaper-sensors@1.0.0-rc.6"
+      ],
+      "block_sha256": "2f4e58e1aaef4cf77e6ed0a023c7c0aa65621295af37f99ed4a654058c541582",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b010": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation, device scope and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b010"
+      ],
+      "change_refs": [
+        "g3-stock-weather-linux@1.0.0-rc.6"
+      ],
+      "block_sha256": "0583bd31606bea8d4bd5808665434b8eda367e78c4ebad7317fb3f44d250d70d",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b011": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation, device scope and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b011"
+      ],
+      "change_refs": [
+        "g3-startup-online-power@1.0.0-rc.6"
+      ],
+      "block_sha256": "c62fddc1537138be429c18de983d87fe771481336df04832edad2d4af1ea7432",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b012": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation, device scope and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b012"
+      ],
+      "change_refs": [
+        "g3-charging-network-icons@1.0.0-rc.6"
+      ],
+      "block_sha256": "98ac771741e58710e2fa338487cb23a72dbb2762a5f71b369d433d6edf4052d3",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b013": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b013"
+      ],
+      "change_refs": [
+        "g3-power-key-shutdown@1.0.0-rc.6"
+      ],
+      "block_sha256": "958a005af4cdffe7433d2c509d73e8c5ff226c96f1ae7c89c35bbab222e55307",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b014": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b014"
+      ],
+      "change_refs": [
+        "g3-web-direct-install@1.0.0-rc.6"
+      ],
+      "block_sha256": "7f160ce42c289991cb9cfe1bcd9ed84c86c604f19adc280490649b8357138ed1",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b015": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b015"
+      ],
+      "change_refs": [
+        "g3-cloud-fresh-readings@1.0.0-rc.6"
+      ],
+      "block_sha256": "57594b78534b6928bfbdea5a490429c39bb55f2e72992739e16b5704badca15b",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b017": {
+      "status": "excluded",
+      "reason": "Known issue retained as a usage limitation.",
+      "basis": [
+        "v1.0.0-rc.6:b017"
+      ],
+      "change_refs": [],
+      "block_sha256": "6dfefa39ebf557ad8f5633a2f43ede4afd664cad8be9304b91706a1c73ade8b0",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
+    },
+    "v1.0.0-rc.6:b018": {
+      "basis": [
+        "v1.0.0-rc.6:b018"
+      ],
+      "block_sha256": "04b81b8269225ffbcb3b28b81b5ca8a33b17b940bd67f01f783916974953586a",
+      "change_refs": [],
+      "reason": "Release channel, upgrade conditions or download link.",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1",
+      "status": "excluded"
+    },
+    "v1.0.0-rc.6:b016": {
+      "status": "approved",
+      "reason": "Author reviewed the implementation and matching Chinese and English behavior.",
+      "basis": [
+        "v1.0.0-rc.6:b016"
+      ],
+      "change_refs": [
+        "g3-sensor-calibration@1.0.0-rc.6"
+      ],
+      "block_sha256": "e2163bd8de519079b36bbcc7382ff413cca56992360b2908e632b68160129711",
+      "release_sha256": "a5d9bc8cb6ad736c24fa5265225d7b597cf127d4cab6db406184fbe10101c2e1"
     }
   }
 }

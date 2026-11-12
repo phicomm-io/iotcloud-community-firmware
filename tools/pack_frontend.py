@@ -7,23 +7,62 @@ import os
 import json
 import subprocess
 import importlib.util
+import re
+import tinycss2
 import zopfli.gzip
 from frontend_release import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def trim_screen_styles(css):
+    """Native A1/M1/TC1 never mount the G3 screen editor's owned classes."""
+    def trim(rules):
+        kept = []
+        for rule in rules:
+            if rule.type == 'qualified-rule':
+                groups = [[]]
+                for token in rule.prelude:
+                    if token.type == 'literal' and token.value == ',':
+                        groups.append([])
+                    else:
+                        groups[-1].append(token)
+                # Inspect only direct selector tokens. A class inside :not(),
+                # :is(), :has() or an attribute cannot prove a rule impossible.
+                groups = [group for group in groups if not any(
+                    a.type == 'literal' and a.value == '.' and
+                    b.type == 'ident' and b.value.startswith('screen-')
+                    for a, b in zip(group, group[1:]))]
+                if not groups:
+                    continue
+                rule.prelude = tinycss2.parse_component_value_list(','.join(tinycss2.serialize(group) for group in groups))
+            elif rule.type == 'at-rule' and rule.lower_at_keyword in ('media', 'supports', 'container', 'layer') and rule.content is not None:
+                rule.content = tinycss2.parse_component_value_list(tinycss2.serialize(trim(tinycss2.parse_rule_list(rule.content))))
+            kept.append(rule)
+        return kept
+    return tinycss2.serialize(trim(tinycss2.parse_stylesheet(css)))
+
+
 def adapt_http_queue(data, model):
     html = gzip.decompress(data)
+    # The shared release also serves the G3 screen designer. Omit its CSS from
+    # native products, keeping the locked UI logic, translations and behavior.
+    text = html.decode('utf-8')
+    text = re.sub(r'(<style\b[^>]*>)([\s\S]*?)(</style\s*>)',
+                  lambda match: match[1] + trim_screen_styles(match[2]) + match[3], text, flags=re.I)
+    html = text.encode('utf-8')
     marker = b'<head>'
     if html.count(marker) != 1:
         raise ValueError('Locked frontend has no unique head insertion point')
     # Serialize API requests through body completion. Keep explanatory comments
     # here: every byte in the injected adapter consumes device OTA capacity.
-    adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
-    html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
+    if b'DeviceHttpQueue' not in html:
+        adapter = (ROOT / 'common/web/http_queue.js').read_bytes()
+        html = html.replace(marker, marker + b'<script>' + adapter + b'</script>', 1)
     # Compress the final bytes after injection, just like the frontend release.
     # Host-only: the device still serves a normal gzip stream verbatim.
-    output = zopfli.gzip.compress(html, numiterations=15)
+    # M1's full UI is close to its fixed OTA slot. More host-side search keeps
+    # the ordinary gzip stream and costs no device RAM or decoding work.
+    output = zopfli.gzip.compress(html, numiterations=500 if model == 'm1' else 15)
     if gzip.decompress(output) != html:
         raise ValueError('Adapted frontend gzip round-trip mismatch')
     return output
@@ -54,6 +93,7 @@ def pack(model):
         provenance=json.loads((ROOT/'frontend.lock.json').read_text())
     data=adapt_http_queue(raw,model)
     provenance['gzip_sha256']=hashlib.sha256(data).hexdigest()
+    provenance['native_css_adapter']='omit-g3-screen-classes-v1'
     metadata=ROOT/'build'/('frontend-'+model+'-provenance.json')
     metadata.parent.mkdir(parents=True,exist_ok=True);metadata.write_text(json.dumps(provenance,indent=2)+'\n')
 

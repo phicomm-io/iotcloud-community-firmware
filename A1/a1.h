@@ -2,7 +2,6 @@
 #include "mico.h"
 #include "mico_system.h"
 #include "protocol.h"
-#include "json.h"
 #include "../common/mqtt_account.h"
 #include <stdio.h>
 #include <string.h>
@@ -68,8 +67,6 @@ bool a1_reset(bool full);
 void a1_state_get(a1_state_t *);
 bool a1_reboot_later(uint32_t ms);
 bool a1_upgrade_reserve(void);
-json_object *a1_json_parse(const char *, size_t);
-bool a1_control_json(const char *kind, json_object *object);
 enum { A1_CONTROL_FAN, A1_CONTROL_LIGHT, A1_CONTROL_LOCK };
 enum { A1_SET_ON=1, A1_SET_SPEED=2, A1_SET_MODE=4, A1_SET_ENABLED=8,
        A1_SET_ALWAYS=16, A1_SET_BRIGHTNESS=32, A1_SET_COLOR=64 };
@@ -80,7 +77,6 @@ typedef struct {
     uint8_t kind, on, speed, mode, enabled, always_on, brightness, red, green, blue;
 } a1_control_t;
 bool a1_control_apply(a1_control_t *, bool button, bool broadcast);
-bool a1_control_light_percent(json_object *);
 enum { A1_INPUT_BUTTON, A1_INPUT_SLIDER, A1_INPUT_NETWORK_RESET, A1_INPUT_FULL_RESET };
 bool a1_input_push(unsigned kind, unsigned key, unsigned clicks, unsigned seconds, int delta);
 void a1_input_poll(void);
@@ -101,8 +97,6 @@ bool a1_ota_write(const uint8_t *, size_t);
 bool a1_ota_finish(void);
 void a1_ota_abort(const char *);
 bool a1_ota_download(const char *);
-json_object *a1_status_json(void);
-json_object *a1_status_live_json(void);
 int a1_socket_read(int, void *, size_t, unsigned);
 bool a1_socket_send(int, const void *, size_t);
 int a1_socket_line(int, char *, size_t);
@@ -117,11 +111,9 @@ void a1_filter_tick(bool running);
 void a1_filter_get(a1_filter_storage_t *);
 /* Returns accepted, busy, or storage_error; parameters are prevalidated. */
 const char *a1_filter_change(unsigned lifetime_hours, bool reset);
-json_object *a1_filter_json(void);
 
 #include "../common/phicomm_features.h"
 
-bool a1_control_local(const char *, json_object *);
 
 #include "../common/mqtt/bemfa.h"
 bool a1_mqtt_config_save(const a1_config_t *,const bemfa_config_t *);

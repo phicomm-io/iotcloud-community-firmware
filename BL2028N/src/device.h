@@ -1,0 +1,102 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+#pragma once
+#include "../protocol/typed_wire.h"
+#include "meter.h"
+#include "../protocol/power_trigger.h"
+#define PH_MODEL "s30-v1b"
+#define PH_INPUT_MAX 1200u
+#define PH_OUTPUT_MAX 4096u
+#define PH_STATUS_CACHE_MAX 2048u
+#include "../common/wall_schedule.h"
+#define PH_STORE_MAGIC UINT32_C(0x354c4250)
+#define PH_TIME_RULES_MAX 8u
+enum { PH_AUTO_OUTLET=1, PH_AUTO_CHILD_LOCK=4, PH_AUTO_INDICATOR=5, PH_AUTO_REBOOT=7 };
+enum { PH_BOOT_OFF, PH_BOOT_ON, PH_BOOT_RESTORE };
+typedef struct {
+    uint32_t magic, revision;
+    uint8_t child_lock, indicator, power_on, calibrated;
+    double coefficients[3], energy_kwh;
+    ph_auth_store auth;
+    uint32_t report_seconds;
+    char name[64], socket_name[64];
+    uint16_t power_next_id;
+    uint8_t last_relay, reserved;
+    ph_power_rule power_rules[PH_POWER_RULES_MAX];
+    int16_t timezone;
+    uint16_t time_reserved;
+    char ntp_host[64];
+    ph_schedule_task time_rules[PH_TIME_RULES_MAX];
+} ph_settings;
+typedef struct {
+    void *user;
+    uint32_t (*now)(void *);
+    bool (*save)(void *, const ph_settings *);
+    void (*relay)(void *, bool);
+    void (*reboot)(void *);
+    void (*network_info)(void *, ph_writer *);
+    const char *(*platform_action)(void *, const char *, const ph_value *, ph_writer *, bool);
+    void (*diagnostics)(void *, ph_writer *);
+    uint32_t (*network_stamp)(void *);
+} ph_device_ops;
+typedef struct {
+    char id[65], action[40];
+    uint8_t domain;
+    unsigned char params[512], data[512];
+    size_t params_len, data_len;
+    const char *code;
+} ph_receipt;
+typedef struct {
+    ph_settings settings;
+    ph_device_ops ops;
+    char mac[13], version[64];
+    uint32_t boot, sequence, local_at;
+    bool relay, local_hold, maintenance, cache_suspended;
+    ph_meter meter;
+    ph_receipt receipts[8];
+    unsigned next_receipt;
+    unsigned char *status_cache;
+    size_t status_size;
+    uint32_t cache_sequence,cache_frames,cache_network,cache_builds;
+    unsigned cache_fields;
+    ph_power_trigger power_triggers[PH_POWER_RULES_MAX];
+    uint32_t power_polled_at;
+    bool power_polled;
+    bool clock_valid, clock_armed;
+    uint32_t utc, utc_ms, clock_previous, clock_highwater, clock_previous_ms;
+} ph_device;
+bool ph_binary_format(ph_wire_format);
+void ph_settings_default(ph_settings *);
+bool ph_settings_valid(const ph_settings *);
+bool ph_settings_migrate_meter_defaults(ph_settings *);
+bool ph_device_init(ph_device *, const ph_device_ops *, const ph_settings *, const char *, const char *, uint32_t);
+/* Caller serializes state access; all views and output buffers are borrowed. */
+/* Release the optional cache before reinitializing or disposing an initialized device. */
+void ph_status_cache_release(ph_device *);
+/* Independent of OTA maintenance; caller holds the product state lock. */
+void ph_status_cache_suspend(ph_device *, bool);
+void ph_status_cache_budget(ph_device *, size_t available, size_t reserve);
+void ph_device_set_maintenance(ph_device *, bool);
+size_t ph_command(ph_device *, const void *, size_t, ph_wire_format, ph_wire_format,
+                  bool authorized, bool admin, void *, size_t);
+/* LAN v4 only: typed views expire on return. receipt_key is the adapter's
+ * peer/session hash; response IDs always retain request_id. Caller holds the
+ * product/auth lock and owns the reserved response before admission. */
+size_t ph_command_context(ph_device *,const char *action,const ph_value *params,
+                          const char *request_id,const char *receipt_key,
+                          const ph_auth_context *,ph_wire_format,void *,size_t,bool *admitted);
+size_t ph_query(ph_device *, const char *, ph_wire_format, void *, size_t);
+void ph_status(ph_device *, ph_writer *);
+void ph_capabilities(ph_device *, ph_writer *);
+void ph_diagnostics(ph_device *, ph_writer *);
+void ph_diag_uint(ph_writer *, unsigned, uint32_t);
+void ph_diag_int(ph_writer *, unsigned, int32_t);
+void phw_cached_fields(ph_writer *, const void *, size_t);
+bool ph_local_toggle(ph_device *);
+/* Worker tick: caller holds the same product mutex as command dispatch. */
+void ph_power_poll(ph_device *);
+bool ph_topic_root(const char *username, const char *mac, char *, size_t);
+
+/* Locked by the same owner as command dispatch. UTC is volatile until SNTP. */
+void ph_clock_sync(ph_device *,uint32_t utc);
+uint32_t ph_clock_utc(ph_device *);
+void ph_schedule_poll(ph_device *);

@@ -12,6 +12,8 @@ on:
         options: [auto, github-hosted, self-hosted]
 permissions:
   contents: read
+env:
+  PHICOMM_FRONTEND_ARCHIVE: ${{ github.workspace }}/build/ci-frontend/frontend.tar.gz
 jobs:
   static-notes:
     runs-on: >-
@@ -36,6 +38,19 @@ jobs:
           cache: npm
       - run: python3 -m pip install Markdown==3.7 cryptography==46.0.3
       - run: npm ci --ignore-scripts
+      - name: Prepare exact frontend archive
+        env:
+          # Match firmware CI: main, tags and fork PRs require the release asset.
+          ALLOW_CANDIDATE_SOURCE: >-
+            ${{ github.ref_type != 'tag' &&
+                ((github.event_name == 'pull_request' &&
+                  github.event.pull_request.head.repo.full_name == github.repository) ||
+                 (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')) }}
+        run: |
+          args=()
+          if [ "$ALLOW_CANDIDATE_SOURCE" = true ]; then args+=(--allow-candidate-source); fi
+          python3 tools/ci/prepare_frontend.py \
+            --output "$PHICOMM_FRONTEND_ARCHIVE" "${args[@]}"
       - name: Migration, scope, lifecycle and browser request tests
         run: |
           python3 tests/test_user_notes.py
@@ -45,13 +60,7 @@ jobs:
           node --test tests/test_release_notes.cjs tests/test_release_notes_web.cjs
           node --test tests/test_ota_worker.mjs
       - name: Build the fixed historical snapshot
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          bash tools/ci/ensure_gh.sh
-          gh release download "$(python3 -c 'import json;print(json.load(open("frontend.lock.json"))["release"])')" \
-            --repo phicomm-io/iotcloud-community-frontend --pattern frontend.tar.gz --dir "$RUNNER_TEMP/notes-frontend"
-          PHICOMM_FRONTEND_ARCHIVE="$RUNNER_TEMP/notes-frontend/frontend.tar.gz" python3 site/build.py build/pages
+        run: python3 site/build.py build/pages
       - name: Browser and no-JavaScript history
         run: |
           npm install --no-save --package-lock=false @playwright/test@1.64.1
@@ -69,3 +78,5 @@ jobs:
             build/pages
             build/notes-evidence
             build/rc-ui-evidence
+            build/ci-frontend/frontend.lock.json
+            build/ci-frontend/provenance.json

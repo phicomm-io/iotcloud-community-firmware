@@ -63,8 +63,19 @@ def resolve_version(root=ROOT, tag=None):
             'base_version': base, 'git_commit': commit, 'git_tag': tag, 'dirty': dirty}
 
 
-def ota_config():
+def ota_config(metadata=None):
     lines = ['/* Generated build-time OTA sources. */', '#pragma once']
+    # Select a channel from release provenance at build time. Never let a
+    # candidate accidentally query stable metadata, or fall back across lanes.
+    candidate = bool(metadata and parse_version(metadata['base_version']).prerelease)
+    channel = os.environ.get('PHICOMM_OTA_CHANNEL', '') or ('candidate' if candidate else 'stable')
+    if channel not in ('candidate', 'stable'):
+        raise ValueError('PHICOMM_OTA_CHANNEL must be candidate or stable')
+    if candidate and channel != 'candidate':
+        raise ValueError('Candidate firmware cannot use stable OTA metadata')
+    lines.extend(['#ifndef PHICOMM_OTA_METADATA_PREFIX',
+                  '#define PHICOMM_OTA_METADATA_PREFIX '+json.dumps('/ota/candidate' if channel == 'candidate' else '/ota/v1'),
+                  '#endif'])
     for name in ('PHICOMM_OTA_CN_BASE_URL', 'PHICOMM_OTA_GLOBAL_BASE_URL', 'PHICOMM_OTA_GITHUB_BASE_URL'):
         value = os.environ.get(name, '').rstrip('/')
         if not value: continue
@@ -82,7 +93,7 @@ def generate(metadata):
               f'#define FIRMWARE_VERSION "{metadata["version"]}"\n')
     for path, content in ((GENERATED / 'build_version.h', header),
                           (GENERATED / 'version.json', json.dumps(metadata, indent=2) + '\n'),
-                          (GENERATED / 'build_ota.h', ota_config())):
+                          (GENERATED / 'build_ota.h', ota_config(metadata))):
         if not path.exists() or path.read_text() != content:
             path.write_text(content)
 

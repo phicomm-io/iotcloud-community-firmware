@@ -1,0 +1,25 @@
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -677,7 +677,10 @@
+     if (waitfor(c, SUBACK, &timer) != SUBACK ||
+         c->readbuf[0] != 0x90 || c->readbuf[1] != 3 ||
+         MQTTDeserialize_suback(&acknowledged, 1, &count, &granted, c->readbuf, c->readbuf_size) != 1 ||
+-        count != 1 || acknowledged != packet || granted < 0 || granted > qos) return MQTT_FAILURE;
++        count != 1 || acknowledged != packet) return MQTT_FAILURE;
++    /* Only this complete correlated SUBACK is an authorization refusal. */
++    if ((unsigned char)granted == 0x80) return MQTT_SUBSCRIBE_DENIED;
++    if (granted < 0 || granted > qos) return MQTT_FAILURE;
+     c->messageHandlers[slot].topicFilter = topicFilter;
+     c->messageHandlers[slot].fp = handler;
+     return MQTT_SUCCESS;
+--- a/libraries/protocols/mqtt/MQTTClient.h
++++ b/libraries/protocols/mqtt/MQTTClient.h
+@@ -37,7 +37,7 @@
+ #define MAX_SIZE_PASSWORD  (12+1)
+ 
+ // all failure return codes must be negative
+-enum returnCode { MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
++enum returnCode { MQTT_SUBSCRIBE_DENIED = -4, MQTT_SOCKET_ERR = -3, MQTT_BUFFER_OVERFLOW = -2, MQTT_FAILURE = -1, MQTT_SUCCESS = 0 };
+ enum QoS { QOS0, QOS1, QOS2 };
+ 
+ struct MQTTMessage

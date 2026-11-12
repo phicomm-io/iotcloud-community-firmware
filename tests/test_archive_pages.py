@@ -38,6 +38,30 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Invalid release path'):
             self.run_mirror(path='/releases/../../escape.bin')
 
+    def test_screen_firmware_font_and_migration_are_verified_before_catalog(self):
+        bodies = {kind: (kind + ' contents').encode() for kind in ('firmware', 'font', 'bootstrap', 'migration')}
+        screen = {kind: dict(path='/releases/v1/' + kind, size=len(body),
+                            sha256=hashlib.sha256(body).hexdigest()) for kind, body in bodies.items()}
+        release = dict(tag='v1', notes='/releases/v1/notes.md', models={}, screen=screen)
+        catalog = json.dumps(dict(releases=[release])).encode()
+        responses = {'/releases/index.json': catalog, '/releases/v1/notes.md': b'notes',
+                     '/releases/v1/SHA256SUMS': b'checksums',
+                     **{screen[k]['path']: v for k, v in bodies.items()}}
+        for corrupt in (None, 'firmware', 'font', 'bootstrap', 'migration'):
+            def request(req, **kwargs):
+                path = req.full_url.removeprefix('https://archive.example')
+                return io.BytesIO(b'corrupt' if corrupt and path == screen[corrupt]['path'] else responses[path])
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as tmp, \
+                 patch.object(archive, 'urlopen', side_effect=request):
+                if corrupt:
+                    with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                        archive.mirror('https://archive.example', tmp)
+                    self.assertFalse((Path(tmp) / 'releases/index.json').exists())
+                else:
+                    archive.mirror('https://archive.example', tmp)
+                    for kind, body in bodies.items():
+                        self.assertEqual((Path(tmp) / screen[kind]['path'].lstrip('/')).read_bytes(), body)
+
     def test_device_manifest_follows_stable_and_never_falls_back_to_raw(self):
         signed = dict(path='/releases/v1/firmware.bin.signed', size=192, sha256='a' * 64)
         raw = dict(path='/releases/v1/firmware.bin.raw', size=1, sha256='b' * 64)

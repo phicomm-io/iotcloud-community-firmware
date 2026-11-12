@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "../common/json_build.h"
+#include "../common/typed_wire.h"
 
 typedef struct {
     int num_of_chunks, total_memory, allocted_memory, free_memory;
@@ -29,47 +29,52 @@ int get_last_reset_reason(void)
 #include "../common/runtime_metrics.h"
 #include "../common/device_status.c"
 
-static json_object *sample(uint32_t tick)
+static bool field(ph_buf *wire,const char *key,int64_t *number)
+{
+    ph_value root,value;assert(phv_parse(PH_WIRE_MSGPACK,wire->buf,wire->len,&root));
+    if(!phv_get(&root,key,&value))return false;
+    if(number){double n;assert(phv_number(&value,&n));*number=(int64_t)n;}
+    return true;
+}
+static int64_t integer(ph_buf *wire,const char *key){int64_t n;assert(field(wire,key,&n));return n;}
+static ph_buf *sample(uint32_t tick)
 {
     now = tick;
-    json_object *status = json_object_new_object();
-    assert(status);
     device_runtime_t captured;runtime_metrics_capture(&captured,now);
-    device_runtime_encode(status,&captured);
-    assert(json_object_to_json_string(status));
-    assert(json_object_get_double(json_object_object_get(status, "uptime_ms")) == tick);
+    ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);device_runtime_mp(&w,&captured);phw_end(&w);
+    ph_buf *status=phw_take(&w);assert(status);
+    assert(integer(status,"uptime_ms")==tick);
 #if defined(MOC) && MOC == 1 && defined(CONFIG_CPU_MX1290)
-    /* Keep combined flags unchanged, and retain them even if the underlying
-     * SDK read is consuming or later returns zero. */
-    assert(json_object_get_int(json_object_object_get(status, "last_reset_reason")) == 0x30);
-    assert(reset_reason_calls == 1);
+    /* Preserve combined reset flags and cache a consuming SDK read. */
+    assert(integer(status,"last_reset_reason")==0x30);
+    assert(reset_reason_calls==1);
 #else
-    assert(!json_object_object_get(status, "last_reset_reason"));
+    assert(!field(status,"last_reset_reason",NULL));
 #endif
     return status;
 }
 
 int main(void)
 {
-    json_object *status = sample(5250);
-    assert(!json_object_object_get(status, "free_memory"));
-    json_object_put(status);
+    ph_buf *status = sample(5250);
+    assert(!field(status,"free_memory",NULL));
+    ph_buf_free(status);
 
     memory_available = true;
     status = sample(10000);
-    assert(json_object_get_int(json_object_object_get(status, "min_observed_free_memory")) == 30000);
-    json_object_put(status);
+    assert(integer(status,"min_observed_free_memory") == 30000);
+    ph_buf_free(status);
 
     memory.free_memory = 19724;
     status = sample(UINT32_MAX);
-    assert(json_object_get_int(json_object_object_get(status, "min_observed_free_memory")) == 19724);
-    json_object_put(status);
+    assert(integer(status,"min_observed_free_memory") == 19724);
+    ph_buf_free(status);
 
     memory.free_memory = 28596;
     status = sample(10); /* Tick rollover does not reset the sampled heap minimum. */
-    assert(json_object_get_int(json_object_object_get(status, "min_observed_free_memory")) == 19724);
-    assert(json_object_get_int(json_object_object_get(status, "free_memory")) == 28596);
-    json_object_put(status);
+    assert(integer(status,"min_observed_free_memory") == 19724);
+    assert(integer(status,"free_memory") == 28596);
+    ph_buf_free(status);
     puts("runtime metrics boot cause and sampled heap checks passed");
     return 0;
 }

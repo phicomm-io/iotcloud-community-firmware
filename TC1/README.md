@@ -33,3 +33,9 @@ MiCO 升级涉及参数 CRC 格式和闭源内核更新，差异及验证见[迁
 填写 MQTT Broker 后，在 Home Assistant 启用 MQTT 自动发现。插口名称、设备名称、童锁、功率和电量可在网页与 HA 中配置或查看。按键动作可自定义；默认长按约 5 秒配网，约 10 秒恢复出厂，恢复出厂会清除配置。童锁开启时，可在上电时按住电源键进入配网热点。
 
 固件升级选择 Releases 中的 `phicomm_tc1_a1.ota.bin`，详细步骤见 [TC1 有线安装与恢复](https://phicomm-io.github.io/guides/tc1-flash.html)（首次安装的通用要求见 [刷机前准备](https://phicomm-io.github.io/guides/flash-prep.html)）。TC1 OTA 不提供 M1/A1 的完整产品校验，务必核对型号和下载校验和。
+
+### 原生 MessagePack SDK profile
+
+TC1 的配网保留产品自身的按键/恢复 SoftAP、WebUI 的 `config.set`（`section: wifi`）、WiFi 扫描、连接验证与失败回滚。SDK 的 WLAN 自动配网在本产品中原本未启用；CLI 的扫描/状态功能和 WiFi/AP/EasyLink 驱动源码仍保留。
+
+该 profile 不再启动旧 SDK 8000 端口的 `/config-read`、`/config-write`、`/config-write-uap` JSON 管理服务，也不再广播指向该端口的 `_easylink._tcp`。原生产品的 MQTT 发现协议继续保留。这是去除旧 JSON 兼容端点，不是替换按键进入的产品 SoftAP。私有 SDK 构建排除对应 config server/menu 源文件，并使用无浮点 printf 的 nano libc；最终 ELF 必须通过 `check_no_json_objects.py`。离线配网回归不代表实机配网验收。

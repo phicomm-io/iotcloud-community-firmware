@@ -1,5 +1,7 @@
 # A1: wired installation and recovery
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 For the A1 with the original EMW3080B / MK3080B Wi-Fi module. Use only `A1` firmware files. For installation over Wi-Fi, see [A1 stock OTA](a1-no-disassembly).
 
 Read [Before flashing](flash-prep). Disconnect mains, original supplies and loads, use a stable independent **3.3 V** supply, and back up the complete Flash before writing. A full image overwrites the bootloader, original firmware and some settings.
@@ -114,7 +116,7 @@ For the A1 purifier:
 python3 emw3080.py flash phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
 ```
 
-Use `--openocd /absolute/path/openocd` if OpenOCD is outside PATH. The Linux configuration supports the newer DAP interface. This Linux procedure has not completed physical-device flashing validation; connection success does not establish successful writing or booting.
+Use `--openocd /absolute/path/openocd` if OpenOCD is outside PATH. The Linux configuration supports the newer DAP interface; this procedure remains experimental.
 
 ### Split files and verify flashing
 
@@ -146,7 +148,7 @@ reset run
 shutdown
 ```
 
-`flash` uses an automatically cleaned temporary directory. Every chunk must return `Result: OK` and OpenOCD must exit successfully. `Verify after write failed`, `Error during Write` or a nonzero exit means failure: stabilize power and repair the connection before rewriting. `Result: OK` establishes programmer post-write verification only. Check normal boot, provisioning and device functions as described below.
+`flash` uses an automatically cleaned temporary directory. Every chunk must return `Result: OK` and OpenOCD must exit successfully. `Verify after write failed`, `Error during Write` or a nonzero exit means failure: stabilize power and repair the connection before rewriting. Then check normal boot, provisioning and device functions as described below.
 
 | Problem | Action |
 | --- | --- |

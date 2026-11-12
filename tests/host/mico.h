@@ -13,6 +13,12 @@
 #include <arpa/inet.h>
 typedef int OSStatus;
 typedef unsigned mico_mutex_t;
+typedef unsigned mico_semaphore_t;
+static inline int mico_rtos_deinit_semaphore(mico_semaphore_t *s){*s=0;return 0;}
+#define MICO_WAIT_FOREVER UINT32_MAX
+static inline int mico_rtos_init_semaphore(mico_semaphore_t *s,int n){(void)n;*s=0;return 0;}
+static inline int mico_rtos_set_semaphore(mico_semaphore_t *s){assert(!*s);*s=1;return 0;}
+static inline int mico_rtos_get_semaphore(mico_semaphore_t *s,uint32_t wait){(void)wait;if(!*s)return -1;*s=0;return 0;}
 typedef uintptr_t mico_thread_arg_t;
 typedef uintptr_t mico_thread_t;
 static inline bool mico_rtos_is_current_thread(mico_thread_t *thread){return *thread==1;}
@@ -31,6 +37,7 @@ typedef int mico_gpio_t, WiFiEvent;
 #define kNoMemoryErr -3
 #define kDeletedErr -4
 #define kConnectionErr -5
+#define kNotPreparedErr -6745
 /* Match MiCODriverRng.h; short or failed Linux reads cannot create a valid
  * producer boot identifier in the real-SDK host worker. */
 static inline OSStatus MicoRandomNumberRead(void *buffer,int bytes){
@@ -72,6 +79,9 @@ static inline void mico_start_timer(mico_timer_t *t){(void)t;}
 static inline void mico_stop_timer(mico_timer_t *t){(void)t;}
 typedef struct { int is_connected; } LinkStatusTypeDef;
 static inline void micoWlanGetLinkStatus(LinkStatusTypeDef *s){s->is_connected=1;}
+typedef struct { char ip[16]; } IPStatusTypedef;
+enum { Station };
+static inline int micoWlanGetIPStatus(IPStatusTypedef *s,int interface){(void)interface;strcpy(s->ip,"127.0.0.1");return kNoErr;}
 static inline void mico_time_get_time(mico_time_t *out){*out=mico_rtos_get_time();}
 static inline int mico_system_context_update(void *p){(void)p;return 0;}
 static inline void MicoSystemReboot(void){}

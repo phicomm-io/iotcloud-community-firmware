@@ -14,10 +14,9 @@ import subprocess
 import sys
 import tempfile
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from frontend_release import read_lock, unpack
+from frontend_release import download, read_lock, unpack
 
 
 def build_source(lock, source):
@@ -51,8 +50,7 @@ def prepare(lock_path, output, allow_candidate_source=False):
     with tempfile.TemporaryDirectory(prefix='.ci-frontend-', dir=output.parent) as temp:
         temp = Path(temp)
         try:
-            with urlopen(Request(url, headers={'User-Agent': 'phicomm-frontend-build'}), timeout=120) as response:
-                data = response.read()
+            data = download(lock)
         except HTTPError as error:
             # Authentication, rate limits and server failures must not change sources.
             if error.code != 404 or not allow_candidate_source:

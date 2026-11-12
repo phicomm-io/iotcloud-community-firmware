@@ -1,0 +1,29 @@
+test_fixed_arm_unsigned_char_refusal_is_distinct (tests.test_mqtt_subscribe_qos.MQTTSubscribeQoS.test_fixed_arm_unsigned_char_refusal_is_distinct) ... ok
+test_fixed_default_enum_qos_0_1_2_and_suback (tests.test_mqtt_subscribe_qos.MQTTSubscribeQoS.test_fixed_default_enum_qos_0_1_2_and_suback) ... ok
+test_fixed_short_enum_qos_0_1_2_and_suback (tests.test_mqtt_subscribe_qos.MQTTSubscribeQoS.test_fixed_short_enum_qos_0_1_2_and_suback) ... ok
+test_original_arm_short_enum_overread (tests.test_mqtt_subscribe_qos.MQTTSubscribeQoS.test_original_arm_short_enum_overread) ... /tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.c: In function ‘MQTTSubscribe’:
+/tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.c:669:5: warning: converting a packed ‘enum QoS’ pointer (alignment 1) to a ‘int’ pointer (alignment 4) may result in an unaligned pointer value [-Waddress-of-packed-member]
+  669 |     int len = MQTTSerialize_subscribe(c->buf, c->buf_size, 0, packet, 1, &topic, (int *)&qos);
+      |     ^~~
+In file included from /tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.c:17:
+/tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.h:39:6: note: defined here
+   39 | enum QoS { QOS0, QOS1, QOS2 };
+      |      ^~~
+/tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.c:669:15: warning: ‘MQTTSerialize_subscribe’ accessing 4 bytes in a region of size 1 [-Wstringop-overflow=]
+  669 |     int len = MQTTSerialize_subscribe(c->buf, c->buf_size, 0, packet, 1, &topic, (int *)&qos);
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.c:669:15: note: referencing argument 7 of type ‘int[0]’
+In file included from /tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTPacket/MQTTPacket.h:93,
+                 from /tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTClient.h:20:
+/tmp/tmppe__kzhs/libraries/protocols/mqtt/MQTTPacket/MQTTSubscribe.h:28:15: note: in a call to function ‘MQTTSerialize_subscribe’
+   28 | DLLExport int MQTTSerialize_subscribe(unsigned char* buf, int buflen, unsigned char dup, unsigned short packetid,
+      |               ^~~~~~~~~~~~~~~~~~~~~~~
+ok
+test_all_product_builders_use_the_complete_ordered_stack (tests.test_mqtt_overlay_preparation.MQTTOverlayPreparationTests.test_all_product_builders_use_the_complete_ordered_stack) ... ok
+test_all_product_sdk_old_prefix_upgrade_matches_fresh_and_repeats (tests.test_mqtt_overlay_preparation.MQTTOverlayPreparationTests.test_all_product_sdk_old_prefix_upgrade_matches_fresh_and_repeats) ... ok
+test_fresh_stack_is_idempotent_and_partial_preparation_is_rejected (tests.test_mqtt_overlay_preparation.MQTTOverlayPreparationTests.test_fresh_stack_is_idempotent_and_partial_preparation_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.971s
+
+OK

@@ -1,4 +1,6 @@
 #pragma once
+#include <stddef.h>
+#include "../common/local_auth.h"
 #include "m1.h"
 #include "../common/automation.h"
 #include "../common/phicomm_features.h"
@@ -56,7 +58,27 @@ typedef struct {
     m1_co2_config_t co2;
     m1_co2_source_config_t co2_source;
     m1_display_config_t display;
+} m1_storage_v11_t;
+
+/* Preserve the complete old object, including trailing padding. New records
+ * begin after its sizeof; the anonymous view retains existing member access. */
+typedef struct {
+    union {
+        m1_storage_v11_t frozen_prefix;
+        struct {
+            m1_config_t base;
+            feature_config_storage_t features;
+            automation_config_t automation;
+            uint8_t reserved_controller_config[20];
+            m1_co2_config_t co2;
+            m1_co2_source_config_t co2_source;
+            m1_display_config_t display;
+        };
+    };
+    ph_auth_store local_auth;
 } app_storage_t;
+typedef char m1_auth_trailer_offset_check[
+    offsetof(app_storage_t,local_auth)==sizeof(m1_storage_v11_t) ? 1 : -1];
 
 typedef char m1_display_v9_size_check[sizeof(m1_display_config_v9_t)==76 ? 1 : -1];
 typedef char m1_display_v10_prefix_check[offsetof(m1_display_config_t,style)==sizeof(m1_display_config_v9_t) ? 1 : -1];

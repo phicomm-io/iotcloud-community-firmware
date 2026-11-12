@@ -1,4 +1,5 @@
 #pragma once
+#include <errno.h>
 /* IDs are volatile RAM only; append vocabulary without a configuration migration. */
 static const char *const log_levels[]={"info","warn","error"};
 static const char *const log_modules[]={"system","command","config","button","schedule","mqtt","ota","test"};
@@ -13,7 +14,7 @@ static bool log_encode(const char *level,const char *module,const char *event,se
     if(e<0 && !strcmp(module,"mqtt")){
         for(unsigned i=0;i<sizeof(log_stages)/sizeof(log_stages[0]);i++){
             size_t n=strlen(log_stages[i]);if(strncmp(event,log_stages[i],n)||strncmp(event+n,"_error_",7))continue;
-            char *end;long value=strtol(event+n+7,&end,10);if(!event[n+7]||*end||value<INT32_MIN||value>INT32_MAX)return false;
+            char *end;errno=0;long value=strtol(event+n+7,&end,10);if(errno==ERANGE||!event[n+7]||*end||value<INT32_MIN||value>INT32_MAX)return false;
             r->event=128+i;r->argument=value;return true;
         }
     }

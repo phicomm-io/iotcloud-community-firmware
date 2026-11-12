@@ -1,26 +1,48 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "diagnostics.h"
-#include <stdio.h>
-#include <string.h>
-size_t ph_mqtt_diag_append(char *out, size_t capacity, size_t used, bool available) {
-    if (used < 2 || used >= capacity || memcmp(out + used -2, "}}", 2))
-        return 0;
-    int n;
-    if (!available)
-        n = snprintf(out + used -2, capacity - used + 2, ",\"mqtt_diag_unavailable\":true}}");
-    else {
-        ph_mqtt_diagnostics d;
-        ph_mqtt_snapshot(&d);
-        n = snprintf(out + used -2, capacity - used + 2, ",\"mqtt_rx_queued\":%u,\"mqtt_tx_queued\":%u,\"mqtt_inflight\":%u," "\"mqtt_queue_bytes\":%lu,\"mqtt_peak_bytes\":%lu,\"mqtt_credit_bytes\":%lu," "\"mqtt_rejected\":%lu,\"mqtt_owner_faults\":%lu,\"mqtt_generation\":%u," "\"mqtt_rx_buffer_bytes\":%lu,\"mqtt_tx_buffer_bytes\":%lu,\"mqtt_protocol_depth\":%u,\"mqtt_operation\":%u," "\"mqtt_last_error_stage\":%u,\"mqtt_last_error\":%d,\"mqtt_errors\":%lu,\"mqtt_reconnects\":%lu," "\"mqtt_max_queue_delay_ms\":%lu,"
-            "\"mqtt_ingress_dropped\":%lu,\"mqtt_busy_overflow\":%lu,"
-            "\"mqtt_failure\":{\"reason\":%lu,\"operation\":%lu,\"free\":%lu,"
-            "\"packet\":%lu,\"credit\":%lu,\"queue\":%lu,\"rx_state\":%lu,"
-            "\"read\":[%ld,%ld,%lu,%lu],\"write\":[%ld,%ld,%lu,%lu]}}}", d.queued[0], d.queued[1], d.inflight[0] + d.inflight[1], (unsigned long) d.bytes, (unsigned long) d.peak_bytes, (unsigned long) d.credit, (unsigned long)(d.rejected[0] > UINT32_MAX - d.rejected[1] ? UINT32_MAX : d.rejected[0] + d.rejected[1]), (unsigned long) d.owner_faults, d.generation, (unsigned long) d.rx_buffer_bytes, (unsigned long) d.tx_buffer_bytes, d.protocol_depth, d.operation, d.last_stage, d.last_error, (unsigned long) d.errors, (unsigned long) d.reconnects, (unsigned long) d.max_delay_ms,
-            (unsigned long)d.ingress_dropped, (unsigned long)d.busy_overflow,
-            (unsigned long)d.failure.reason, (unsigned long)d.failure.operation, (unsigned long)d.failure.free_bytes,
-            (unsigned long)d.failure.packet_bytes, (unsigned long)d.failure.credit_bytes, (unsigned long)d.failure.queue_bytes, (unsigned long)d.failure.rx_state,
-            (long)d.failure.read.requested, (long)d.failure.read.returned, (unsigned long)d.failure.read.timeout_ms, (unsigned long)d.failure.read.elapsed_ms,
-            (long)d.failure.write.requested, (long)d.failure.write.returned, (unsigned long)d.failure.write.timeout_ms, (unsigned long)d.failure.write.elapsed_ms);
-    }
-    return n > 0 && (size_t) n < capacity - used + 2 ? used -2 + (size_t) n : 0;
+void ph_mqtt_diag_write_mp(ph_writer *w,bool available)
+{
+    if(!available){phw_bool(w,"mqtt_diag_unavailable",true);return;}
+    ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);
+    phw_uint(w,"mqtt_rx_queued",d.queued[0]);
+    phw_uint(w,"mqtt_tx_queued",d.queued[1]);
+    phw_uint(w,"mqtt_inflight",d.inflight[0]+d.inflight[1]);
+    phw_uint(w,"mqtt_queue_bytes",d.bytes);
+    phw_uint(w,"mqtt_peak_bytes",d.peak_bytes);
+    phw_uint(w,"mqtt_credit_bytes",d.credit);
+    phw_uint(w,"mqtt_rejected",d.rejected[0]>UINT32_MAX-d.rejected[1]?UINT32_MAX:d.rejected[0]+d.rejected[1]);
+    phw_uint(w,"mqtt_owner_faults",d.owner_faults);
+    phw_uint(w,"mqtt_generation",d.generation);
+    phw_uint(w,"mqtt_rx_buffer_bytes",d.rx_buffer_bytes);
+    phw_uint(w,"mqtt_tx_buffer_bytes",d.tx_buffer_bytes);
+    phw_uint(w,"mqtt_protocol_depth",d.protocol_depth);
+    phw_uint(w,"mqtt_operation",d.operation);
+    phw_uint(w,"mqtt_last_error_stage",d.last_stage);
+    phw_uint(w,"mqtt_errors",d.errors);
+    phw_uint(w,"mqtt_reconnects",d.reconnects);
+    phw_uint(w,"mqtt_max_queue_delay_ms",d.max_delay_ms);
+    phw_uint(w,"mqtt_ingress_dropped",d.ingress_dropped);
+    phw_uint(w,"mqtt_busy_overflow",d.busy_overflow);
+    phw_int(w,"mqtt_last_error",d.last_error);
+    phw_begin(w,"mqtt_failure",false);
+    phw_u32(w,"reason",d.failure.reason);
+    phw_u32(w,"operation",d.failure.operation);
+    phw_u32(w,"free",d.failure.free_bytes);
+    phw_u32(w,"packet",d.failure.packet_bytes);
+    phw_u32(w,"credit",d.failure.credit_bytes);
+    phw_u32(w,"queue",d.failure.queue_bytes);
+    phw_u32(w,"rx_state",d.failure.rx_state);
+    phw_begin(w,"read",true);
+    phw_int(w,NULL,d.failure.read.requested);
+    phw_int(w,NULL,d.failure.read.returned);
+    phw_int(w,NULL,d.failure.read.timeout_ms);
+    phw_int(w,NULL,d.failure.read.elapsed_ms);
+    phw_end(w);
+    phw_begin(w,"write",true);
+    phw_int(w,NULL,d.failure.write.requested);
+    phw_int(w,NULL,d.failure.write.returned);
+    phw_int(w,NULL,d.failure.write.timeout_ms);
+    phw_int(w,NULL,d.failure.write.elapsed_ms);
+    phw_end(w);
+    phw_end(w);
 }

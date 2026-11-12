@@ -251,16 +251,13 @@ static void budget() {
   Nor nor; seed(nor); load(); iotcloud::HubService service(config);
   service.store = saveConfig;
   service.randomHex = [](size_t n) { return std::string(n * 2, 'a'); };
-  service.derive = [](const std::string &, const std::string &) { return std::string(64, 'b'); };
   using R = iotcloud::HubService::Request;
-  const std::string credentials = R"({"username":"local","password":"local-password"})";
-  assert(service.handle(R("POST", "/api/hub/setup", credentials, "", "", true), 0).status == 201);
-  auto login = service.handle(R("POST", "/api/auth/login", credentials), 1); assert(login.status == 200);
+  assert(service.initializeIdentity());
   for (unsigned i = 0; i < 12; i++) {
     DynamicJsonDocument body(1024); char mac[13]; snprintf(mac, sizeof(mac), "aabbccdd%04x", i + 1);
     body["mac"] = std::string(mac); body["model"] = i == 0 ? "tc1" : i == 1 ? "a1" : "m1"; body["version"] = "v2";
     std::string request; serializeJson(body, request);
-    assert(service.handle(R("POST", "/api/devices", request, login.token), i + 2).status == 201);
+    assert(service.handle(R("POST", "/api/devices", request, true), i + 2).status == 201);
     assert(config.capacity() < 16384 && iotcloud::HubService::valid(config["hub"]));
     auto expected = snapshot(); boot(nor); assert(loadConfigText() == expected); intact();
   }
@@ -272,11 +269,11 @@ static void budget() {
     map["topic"] = std::string("lab") + std::to_string(i) + (device == 0 ? "001" : channel ? "002" : "003");
   }
   std::string request; serializeJson(body, request);
-  auto reply = service.handle(R("PUT", "/api/integrations/bemfa", request, login.token), 20);
+  auto reply = service.handle(R("PUT", "/api/integrations/bemfa", request, true), 20);
   assert(reply.status == 200);
   // Keeping the key must copy it before move-assignment releases the old pool.
   body["api_key"] = ""; request.clear(); serializeJson(body, request);
-  assert(service.handle(R("PUT", "/api/integrations/bemfa", request, login.token), 21).status == 200);
+  assert(service.handle(R("PUT", "/api/integrations/bemfa", request, true), 21).status == 200);
   assert(config["hub"]["bemfa"]["api_key"] == "test-api-key-1234");
   body.clear(); body["enabled"] = true; maps = body.createNestedArray("mappings");
   for (unsigned i = 0; i < 8; i++) {
@@ -286,7 +283,7 @@ static void budget() {
     map["retain"] = false; map["allow_retained"] = false;
   }
   request.clear(); serializeJson(body, request);
-  assert(service.handle(R("PUT", "/api/hub/bridge", request, login.token), 22).status == 200);
+  assert(service.handle(R("PUT", "/api/hub/bridge", request, true), 22).status == 200);
   auto expected = snapshot(); boot(nor); assert(loadConfigText() == expected); intact();
   printf("12 devices + 8 Bemfa + 8 bridge mappings: JSON=%zu pool=%zu/16384 bytes\n", expected.size(), config.capacity());
 }

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "../common/watchdog.c"
 #include "../common/watchdog_flash.h"
+#include "../common/device_status.c"
 
 static uint32_t now_ms, last_feed;
 static unsigned feeds, critical, erases, reads;
@@ -62,8 +63,8 @@ static void advance(unsigned ms, unsigned missing)
         watchdog_poll();
     }
 }
-static const char *field(json_object *o, const char *key)
-{ return json_object_get_string(json_object_object_get(o,key)); }
+static const char *field(const ph_value *o,const char *key)
+{ static char text[64];ph_value v;assert(phv_get(o,key,&v)&&phv_text(&v,text,sizeof(text)));return text; }
 int main(void)
 {
     boot(0,32); ready(); advance(600000,0); assert(!failed && feeds > 1000);
@@ -120,11 +121,12 @@ int main(void)
     const char *labels[] = {"watchdog","software","lockup","power_on","power_on","power_on","unknown","unknown","watchdog"};
     for (unsigned i = 0; i < sizeof(reasons)/sizeof(reasons[0]); i++) {
         boot(0,reasons[i]); ready(); reset_bits = 0; /* SDK value is cached. */
-        watchdog_boot_event(); json_object *o = json_object_new_object();
-        watchdog_status_json(o);
+        watchdog_boot_event();watchdog_status_t captured;watchdog_status_capture(&captured);
+        ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);watchdog_fields(&w,&captured);phw_end(&w);
+        ph_buf *wire=phw_take(&w);assert(wire);ph_value root,*o=&root,v;int64_t n;assert(phv_parse(PH_WIRE_MSGPACK,wire->buf,wire->len,o));
         assert(!strcmp(field(o,"reset_reason"),labels[i]));
-        assert(json_object_get_int(json_object_object_get(o,"reset_reason_raw")) == reasons[i]);
-        assert(!strcmp(field(o,"watchdog_state"),"healthy")); json_object_put(o);
+        assert(phv_get(o,"reset_reason_raw",&v)&&phv_int(&v,&n)&&n==reasons[i]);
+        assert(!strcmp(field(o,"watchdog_state"),"healthy")); ph_buf_free(wire);
     }
     /* A stopped monitor or stalled scheduler has no independent feeder. */
     boot(0,1); ready(); stopped = feeds; now_ms += WATCHDOG_HARDWARE_MS;

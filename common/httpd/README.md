@@ -12,22 +12,24 @@ original MIT notices.
 `ph_http_server_open/step/close` run the core; `ph_http_start/stop` provide the
 MiCO owner lifecycle. Stop is cooperative: socket/core storage stays owned until
 the live owner acknowledges. `ph_http_snapshot()` copies cached diagnostics;
-`ph_http_json_owner()` exposes the stable handle only on the HTTP thread.
+the historically named `ph_http_json_owner()` exposes the stable owner handle
+only on the HTTP thread; it does not build a JSON object.
 
-One 12288-byte owner stack owns all sockets from accept through close. Static
-slots are A1=3, M1=4 and TC1=4; the configured TCP cap matches these limits and
-becomes 2 during OTA. Headers parse independently, but only one exchange calls
-business code or owns a body/JSON response. One completed header may wait one
-second; further completed headers receive bounded 503 replies. Partial headers
+One owner thread handles all sockets from accept through close. Its stack is
+A1=9216, M1=12288 and TC1=8192 bytes. Each model has four socket slots and at
+most two completed requests waiting behind the active exchange; the configured
+TCP cap becomes 2 during OTA. Headers parse independently, but only one exchange
+calls business code or owns a request/response buffer. Waiting headers have a
+one-second deadline; further completed headers receive bounded 503 replies. Partial headers
 do not hold the business lease. Application callbacks are synchronous and cannot
 be preempted by the event loop.
 
 The application `begin/retry/body/complete/release` callbacks implement admission,
-body handling and response ownership. The response body, owned JSON printbuf and
+body handling and response ownership. The request body, owned binary response and
 reservation survive through send/close. `release(response_sent)` receives true
 only after complete transmission and successful descriptor close; it does not
 prove that the peer application received the response. Static assets stay in
-flash. The scalar response buffer is 1280 bytes on A1/M1 and 1536 on TC1.
+flash. The scalar response buffer is 1536 bytes on each model.
 
 ## Bounds and failure behavior
 
@@ -67,7 +69,7 @@ deadlines do not establish finite closed-kernel execution or resource reclamatio
 
 | Behavior | Adapter contract |
 | --- | --- |
-| GET service APIs | Existing `/api/v1` info/status/capabilities/config/logs/schedules/memory dispatch and full/live views |
+| GET service APIs | `/api/v1` info/status/capabilities/config/logs/schedules/memory return MessagePack; status is the complete business payload |
 | POST command | 8192-byte body bound; TC1 rejects empty body; OTA permits at most 1024-byte commands |
 | OTA upload | Existing signed/explicit legacy-raw mode and writers; verify cap 2 before synchronous setup; 512-byte chunks, 15-second idle/300-second total deadlines |
 | A1/M1 frontend | `/`, `/index.html`, `/favicon.ico`; gzip, ETag/weak match, private cache and Vary Authorization |
@@ -97,41 +99,47 @@ OTA operations release ordinary failures; low-level Flash errors and repeated
 cleanup cannot release a subsequent job. A pause request leaves the worker
 watchdog active until acknowledged exit, before close/cleanup.
 
-## JSON and status contracts
+## MessagePack and status contracts
 
-`common/json_owned.c` consumes one owned response reference using the patched SDK
-private JSON layout. It retires encoded members only through uniquely owned
-ancestors; shared roots/subtrees remain unchanged. SDK primitive callbacks retain
-escaping/number bytes. The reusable primitive buffer and 256-byte wire growth
-avoid a second full graph lifetime. Traversal uses 32 automatic frames; excessive
-depth, sticky builder errors or OOM discard the complete wire. Existing cycles
-remain the caller's responsibility to break. This does not change SDK-wide JSON.
+HTTP, native MQTT and authenticated UDP use the same borrowed `ph_value`
+parameter views, typed business adapters and direct `ph_writer` output. Input
+views expire when synchronous dispatch returns; asynchronous operations copy
+their required data. Request and transport-owned response buffers survive
+through transmission and cleanup. No JSON object graph is constructed on these
+paths. The isolated Home Assistant writer retains its required JSON contract.
 
-HTTP and modern MQTT share a non-waiting generation token for JSON construction
-through encoding. A short mutex protects only scalar ownership, never network or
-builder work. HTTP small-request contention uses the two-second WAIT/25 ms retry
-policy; cleanup releases token and byte claims exactly once. Encoding releases
-the token before transmission. The unchanged 16 KiB soft floor and selected
-producer exclusion do not isolate memory from discovery/config, automation or
-native SDK/network allocations. Background owned publication consumes its graph
-before synchronous QoS1 transport and retains independent wire through transport.
+Command dispatch is serialized independently of transport ownership. Cached
+status and capabilities stay under the command lock; each response copies the
+encoded payload into its own envelope, so no network operation borrows mutable
+cache bytes. Source changes invalidate generation counters. Capabilities are
+event driven; status also checks elapsed seconds for ages, countdowns and uptime.
+There is no background rebuild solely because a clock tick elapsed. Both legacy
+`view` values select this same business payload, rather than separate full/live
+diagnostic projections.
+
+HTTP small-request contention uses the two-second WAIT/25 ms retry policy;
+cleanup releases byte claims exactly once. Low-heap admission can evict
+expendable status/capability caches and retry. The 16 KiB soft floor does not
+isolate memory from discovery/config, automation or native SDK/network
+allocations. MQTT tracks native and HA publication progress independently and
+retains command receipts separately from replaceable ordinary status.
 
 Status uses request-local typed projections from `common/device_status.h`.
 HTTP/MQTT share model capture and pure encoding. A1/M1 capture uses config→state
 mutex order and each feature/watchdog owner; TC1 uses its status mutex and
 config-phase exclusion, with OTA metadata copied separately. Initialization
 failure stops TC1 startup. Groups are individually coherent, not one atomic
-hardware instant; no state mutex spans GPIO, JSON, allocation, network or Flash.
+hardware instant; no state mutex spans GPIO, allocation, network or Flash.
 Config reservation rejects captures throughout restore/persistence/rollback;
-OTA reservation alone permits coherent live snapshots.
+OTA reservation retains the bounded update-status and capability paths.
 
 The snapshot clock is sampled after sensor copies. Encoding reads frozen POD
 and immutable literals only, with no getter, clock, lock or hardware access.
-Live omits full diagnostic/scan/credential scratch; full includes diagnostics
-and password-presence booleans. M1 retains CO2-only SCD40 exposure; A1 reports
-last effective fan output without running PID. Heap metrics are captured before
-JSON allocation. A1/M1 full status omits the seven added HTTP owner/restart/close/
-size fields; their complete cached values remain at `/api/v1/memory`.
+M1 retains CO2-only SCD40 exposure; A1 reports the last effective fan output
+without running PID. Runtime, panel, UART and HTTP diagnostics are read on demand
+through `diagnostics.get`, using the shared numeric field schema. Missing device
+fields are omitted. `/api/v1/memory` remains a separate binary troubleshooting
+endpoint with a fixed-buffer emergency response under memory pressure.
 
 ## Diagnostics and verification
 
@@ -141,17 +149,18 @@ numbers only. `http_core_occupied` is current userspace occupancy.
 `http_tcp_sample_ms` timestamps the last owner-only listener admission snapshot
 (startup or actual cap change); TCP_CONN_NUM is not live. Steady owner waits and
 status/MQTT readers perform no observation getsockopt calls. MQTT diagnostics
-use a request-owned 2304-byte scratch after reserve admission; OOM/low heap keeps
-the smaller response with `mqtt_diag_unavailable:true`, never fabricated zeros.
+copy a typed snapshot and write directly to the binary response. If allocation
+fails, the memory endpoint uses its fixed HTTP buffer for a smaller emergency
+response, without fabricating zero MQTT counters.
 
 Run host regression modules from the repository root, for example:
 
 ```sh
-python3 -m unittest tests.test_http_core tests.test_http_callbacks tests.test_shared_http_adversarial tests.test_http_json_owned tests.test_json_build_gate tests.test_status_views tests.test_typed_tc1_status tests.test_ota_recovery
+python3 -m unittest tests.test_http_core tests.test_http_callbacks tests.test_http_product_mp tests.test_service_mp tests.test_status_views tests.test_typed_tc1_status tests.test_ota_recovery
 ```
 
 Additional entry points include `tests/test_http_core_tcp.py`,
-`tests/test_http_json_budget.py`, `tests/test_shared_http_arm.py`,
+`tests/test_http_mp_stack_gate.py`, `tests/test_shared_http_arm.py`,
 `tests/test_shared_http_soak.py`, `tests/test_shared_http_tcp_soak.py`,
 `tests/test_tc1_status_guard.py`, and `tests/ota/run.sh`. Firmware gates use
 `tools/check_http_core.py` and model/common `.su` frames. Verify the available

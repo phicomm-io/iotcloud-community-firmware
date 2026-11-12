@@ -1,4 +1,6 @@
-# TC1 wired flashing and recovery (A1 hardware revision)
+# TC1 wired installation and recovery (A1 hardware revision)
+
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
 
 Only for the TC1 power strip with A1 hardware and an EMW3031 module. TC1 A2 is unsupported. Read [Before flashing](flash-prep) first.
 

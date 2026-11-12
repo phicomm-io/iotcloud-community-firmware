@@ -20,7 +20,7 @@ output.mkdir(parents=True, exist_ok=True)
 (output / (artifact + '.ota.bin.signed')).unlink(missing_ok=True)
 sdk = json.loads((Path(__file__).resolve().parents[2] / 'common/mico-sdk.json').read_text())
 manifest = {'version': version, 'target': prefix, 'sdk': sdk, 'sdk_commit': sdk['commit'],
-            'toolchain': 'ARM GCC 5.4.1', 'files': {}}
+            'toolchain': 'ARM GCC '+os.environ.get('PHICOMM_BUILD_COMPILER_EXPECTED', '5.4.1'), 'files': {}}
 manifest.update(version_metadata)
 manifest['firmware_variant'] = variant
 manifest['frontend_http_queue_sha256'] = hashlib.sha256((Path(__file__).resolve().parents[2] / 'common/web/http_queue.js').read_bytes()).hexdigest()

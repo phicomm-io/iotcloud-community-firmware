@@ -5,7 +5,7 @@
 #define FIRMWARE_REVISION FIRMWARE_VERSION
 #define MANUFACTURER "Phicomm Community"
 #define SERIAL_NUMBER "A1"
-#define PROTOCOL "phicomm.a1.local"
+#define PROTOCOL "openiot.a1.local"
 #define MICO_DEFAULT_APPLICATION_STACK_SIZE 4096
 #define MICO_WLAN_CONFIG_MODE CONFIG_MODE_EASYLINK_WITH_SOFTAP
 #define EasyLink_TimeOut 60000

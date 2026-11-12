@@ -1,2 +1,3 @@
 # Host-only compression of the final embedded WebUI after HTTP adapter injection.
 zopfli==0.2.3.post1
+tinycss2==1.4.0

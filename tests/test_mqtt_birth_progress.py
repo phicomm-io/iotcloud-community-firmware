@@ -30,6 +30,9 @@ class BirthProgress(unittest.TestCase):
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include "common/mqtt/publication.h"
+static ph_mqtt_publication ha_publication;
+static bool service_mqtt_status_due(bool changed){(void)changed;return false;}
 #define MQTT_SUCCESS 0
 #define PH_MQTT_RECONFIGURE -3
 #define PH_MQTT_MORE 2
@@ -50,7 +53,9 @@ static void mico_rtos_unlock_mutex(unsigned *m){(void)m;}
 static unsigned feature_revision,discovery_index,state_index,state_pending,state_seen;
 static int old_brightness,old_fresh,old_co2_fresh,old_pressure_fresh;
 static unsigned sequence,co2_sequence,pressure_sequence,count,snapshot_at;
-static char base[8],feature_filters[4][32];static int account,publish;
+static char base[8],feature_filters[4][32];static int account,publish,publish_bytes;
+static int ha_state(void){return 0;}
+static int retry_metadata(void){return MQTT_SUCCESS;}
 static unsigned calls,resets,trace[40],inject_at;static bool injected,fail_once,language_change;
 static void ota_job_poll(void){}
 static bool ota_job_active(void){return false;}
@@ -107,9 +112,12 @@ static unsigned ha_refresh_pending;
 static unsigned discovery_index,state_index,publication_cursor,snapshot_at;
 static unsigned calls,trace[64],inject_at;
 static bool session_current(void){return true;}
+static bool service_mqtt_status_due(bool changed){(void)changed;return false;}
 static bool ota_job_active(void){return false;}
 static int ota_service(const char*x){(void)x;return 0;}
 static int power_sensor_cycle(bool *handled){*handled=false;return 0;}
+static unsigned power_report_polls;
+static void power_report_poll(void){power_report_polls++;}
 static unsigned mico_rtos_get_time(void){return 0;}
 static bool power_requested(void){return false;}
 static int service_mqtt_snapshot(int sender,void*x){(void)sender;(void)x;return 0;}
@@ -147,6 +155,7 @@ int main(void){
  calls=0;ha_refresh_pending=3;
  for(unsigned i=0;i<22;i++)assert(!session_cycle(0));
  assert(calls==22&&!ha_refresh_pending);
+ assert(power_report_polls>=22);
  for(unsigned i=0;i<22;i++)assert(trace[i]==i);
  return 0;
 }
@@ -159,7 +168,7 @@ int main(void){
             source = path/'probe.c'
             source.write_text(fixture)
             binary = path/'probe'
-            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-g',
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-g', '-I'+str(ROOT),
                             '-fsanitize=address,undefined', '-fno-pie', '-no-pie',
                             str(source), '-o', str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=10)

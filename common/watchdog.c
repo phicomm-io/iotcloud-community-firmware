@@ -224,21 +224,6 @@ void watchdog_status_capture(watchdog_status_t *out)
     out->fault = fault; out->reset_raw = reset_raw; out->reset_name = reset_name();
     watchdog_unlock(mask);
 }
-void watchdog_status_encode(struct json_object *out, const watchdog_status_t *s)
-{
-#define STATUS_INT(k,v) json_build_object_add(out,k,json_object_new_int(v))
-#define STATUS_BOOL(k,v) json_build_object_add(out,k,json_object_new_boolean(v))
-#define STATUS_STRING(k,v) json_build_object_add(out,k,json_object_new_string(v))
-#include "watchdog_fields.inc"
-#undef STATUS_INT
-#undef STATUS_BOOL
-#undef STATUS_STRING
-}
-void watchdog_status_json(struct json_object *out)
-{
-    watchdog_status_t snapshot; watchdog_status_capture(&snapshot);
-    watchdog_status_encode(out, &snapshot);
-}
 
 void watchdog_binding_enable(bool on){
     uint32_t mask=watchdog_lock();heartbeat_t *p=&points[WATCHDOG_BINDING];

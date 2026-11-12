@@ -33,7 +33,9 @@ def prepare(destination):
             if not (destination / 'makefiles/Makefile').is_file():
                 raise ValueError(f'Incomplete MiCO SDK checkout: {destination}')
             return
-        cache = Path(os.environ.get('MICO_SDK_CACHE', ROOT / 'build/mico-upstream.git')).resolve()
+        tools_home = Path(os.environ.get('PHICOMM_TOOLS_HOME',
+                          Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'phicomm'))
+        cache = Path(os.environ.get('MICO_SDK_CACHE', tools_home / 'mico-upstream.git')).resolve()
         cache.parent.mkdir(parents=True, exist_ok=True)
         with (cache.parent / '.mico-source.lock').open('w') as source_lock:
             fcntl.flock(source_lock, fcntl.LOCK_EX)

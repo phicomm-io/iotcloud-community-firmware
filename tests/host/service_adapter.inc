@@ -1,31 +1,53 @@
-/* Fake peripherals only. Real service envelope and MQTT worker are linked. */
+/* Fake peripherals only. Real native envelope, ownership and MQTT worker link.
+ * Full product validation/storage matrices run in the native manifest. */
 #include "../../common/service.h"
-json_object *automation_command(const char *a,json_object *p,const char **code,bool *handled){(void)a;(void)p;(void)code;*handled=false;return NULL;}
-json_object *service_product_capabilities(void){json_object *o=json_object_new_object();json_object_object_add(o,"protocol",json_object_new_int(2));return o;}
-json_object *service_product(const char *a,json_object *p,const char **code){
- *code="unsupported";
- if(!strcmp(a,"status.get") || !strcmp(a,"info.get")){json_object *o=json_object_new_object();
-#ifdef HOST_A1
- json_object_object_add(o,"model",json_object_new_string("a1"));
-#elif defined(HOST_M1)
- json_object_object_add(o,"model",json_object_new_string("m1"));
-#else
- json_object_object_add(o,"model",json_object_new_string("tc1"));
-#endif
-json_object_object_add(o,"ip",json_object_new_string("127.0.0.1"));json_object_object_add(o,"version",json_object_new_string("host-test"));json_object_object_add(o,"sensor_valid",json_object_new_boolean(true));json_object_object_add(o,"config_dirty",json_object_new_boolean(false));*code="ok";return o;}
-#ifdef HOST_M1
- if(!strcmp(a,"display.set")){json_object *v=json_object_object_get(p,"brightness");if(v && json_object_is_type(v,json_type_int)){int n=json_object_get_int(v);if(n>=0 && n<=100 && !(n%25)){m1_set_brightness(n/25);*code="accepted";}}}
-#elif defined(HOST_A1)
- if(!strcmp(a,"fan.set")){a1_control_local("fan",p);*code="accepted";}
-#else
- if(!strcmp(a,"outlet.set")){json_object *v=json_object_object_get(p,"on"),*i=json_object_object_get(p,"index");if(v && json_object_is_type(v,json_type_boolean) && i && json_object_is_type(i,json_type_int) && json_object_get_int(i)>=0 && json_object_get_int(i)<6){UserRelaySet(json_object_get_int(i),json_object_get_boolean(v));*code="accepted";}}
-#endif
- return NULL;
+bool automation_mp(const char *a,const ph_value *p,ph_writer *w,const char **code){
+ (void)a;(void)p;(void)w;(void)code;return false;
 }
-
-#include "../../common/json_owned.h"
-struct printbuf *service_product_status_wire(bool live,bool envelope,const char *id){
- (void)live;const char *code;json_object *data=service_product("status.get",NULL,&code);
- if(envelope){json_object *out=json_object_new_object();if(id)json_build_object_add(out,"request_id",json_object_new_string(id));json_build_object_add(out,"code",json_object_new_string(code));json_build_object_add(out,"message",json_object_new_string("操作成功"));json_build_object_add(out,"data",data);data=out;}
- return json_owned_to_wire(data);
+void service_product_capabilities_mp(ph_writer *w,const char *const *extra,bool restricted){
+ (void)extra;(void)restricted;phw_begin(w,NULL,false);phw_int(w,"protocol",2);phw_end(w);
+}
+void service_product_status_mp(ph_writer *w){
+ phw_begin(w,NULL,false);
+#ifdef HOST_A1
+ phw_text(w,"model","a1");phw_bool(w,"on",config.fan_on);phw_uint(w,"speed",config.speed);
+#elif defined(HOST_M1)
+ phw_text(w,"model","m1");phw_uint(w,"brightness",m1_state.brightness_requested*25);
+#else
+ phw_text(w,"model","tc1");phw_begin(w,"outlets",true);
+ for(unsigned i=0;i<6;i++)phw_bool(w,NULL,config.socket_status[i]);phw_end(w);
+#endif
+ phw_text(w,"ip","127.0.0.1");phw_text(w,"version","host-test");
+ phw_bool(w,"sensor_valid",true);phw_bool(w,"config_dirty",false);phw_end(w);
+}
+void service_product_info_mp(ph_writer *w){service_product_status_mp(w);}
+void service_product_diagnostics_mp(ph_writer *w){phw_begin(w,NULL,false);phw_end(w);}
+bool service_product_mp(const char *a,const ph_value *p,ph_writer *w,const char **code){
+ bool handled=false;ph_value v;int64_t n;
+#ifdef HOST_M1
+ if(!strcmp(a,"display.set")){
+  handled=true;*code="invalid_params";
+  if(phv_get(p,"brightness",&v)&&phv_int(&v,&n)&&n>=0&&n<=100&&!(n%25)){
+   m1_set_brightness(n/25);*code="accepted";
+  }
+ }
+#elif defined(HOST_A1)
+ if(!strcmp(a,"fan.set")){
+  handled=true;*code="invalid_params";a1_control_t r={.kind=A1_CONTROL_FAN};bool valid=true;
+  if(phv_get(p,"on",&v)){valid=phv_bool(&v,&r.on);r.fields|=A1_SET_ON;}
+  if(phv_get(p,"speed",&v)){
+   valid=valid&&phv_int(&v,&n)&&n>=0&&n<=100;
+   if(valid){r.speed=n;r.fields|=A1_SET_SPEED;}
+  }
+  if(valid&&r.fields&&a1_control_apply(&r,false,false))*code="accepted";
+ }
+#else
+ if(!strcmp(a,"outlet.set")){
+  handled=true;*code="invalid_params";bool on;
+  if(phv_get(p,"on",&v)&&phv_bool(&v,&on)&&phv_get(p,"index",&v)&&phv_int(&v,&n)&&n>=0&&n<6){
+   UserRelaySet(n,on);*code="accepted";
+  }
+ }
+#endif
+ if(handled){phw_begin(w,NULL,false);phw_end(w);}return handled;
 }

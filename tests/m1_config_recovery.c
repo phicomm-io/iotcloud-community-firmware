@@ -64,6 +64,11 @@ int main(void)
     cold_boot(&expected);
 
     foreign_boot(); sdk_latch_uncertain();
+    m1_config_t candidate=*app_config;
+    strcpy(candidate.web_password,"adminfjr");
+    before=*(app_storage_t *)app_config;
+    assert(!m1_config_save(&candidate));
+    assert(!memcmp(&before,app_config,sizeof(before)) && !sdk_mutations());
     assert(!m1_reset(false) && !m1_reset(true));
     assert(device_config_recovery() && !sdk_mutations() && !m1_state.reboot_pending);
     puts("M1 actual reset/UART + pinned SDK: recovery network reset rejected without ACK; full clear failure retry; persisted cold boot; normal network reset; uncertain commit guard PASS");

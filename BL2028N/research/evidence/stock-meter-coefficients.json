@@ -1,0 +1,49 @@
+{
+  "status": "FIXED_CODE_COEFFICIENTS_CONFIRMED",
+  "source_version": "2M.1220",
+  "source_sha256": "1252da1ea8fd19fa5341fb6dee28b4ad6c1599394981bc5b60cd5d2bd0c2e610",
+  "app_sha256": "6cd7246861ea44f277f25bc61b2f236cec7c5f4db3c487cdb177c8bbc9c9e723",
+  "coefficients": [
+    {
+      "field": "voltage",
+      "coefficient": 1.894288,
+      "logical_address": "0x27380",
+      "physical_first_byte": "0x29ab8",
+      "raw_bytes_hex": "b24813ef004ffe3f"
+    },
+    {
+      "field": "current",
+      "coefficient": 1.0102,
+      "logical_address": "0x27390",
+      "physical_first_byte": "0x29ac8",
+      "raw_bytes_hex": "0bb5a679c729f03f"
+    },
+    {
+      "field": "power",
+      "coefficient": 1.88835008906368,
+      "logical_address": "0x273a4",
+      "physical_first_byte": "0x29ade",
+      "raw_bytes_hex": "c8d53e95ae36fe3f"
+    }
+  ],
+  "per_unit_persistent_meter_calibration": "not identified; absence not proven",
+  "device_write_performed": false,
+  "original_parser_emulation": {
+    "status": "PASS",
+    "actual_stock_parser_emulated": true,
+    "stock_function": "0x2703c",
+    "sample_ratios": [
+      100,
+      1,
+      5
+    ],
+    "stock_output_mv_ma_mw": [
+      189428,
+      1010,
+      9441
+    ],
+    "only_report_side_effect_hooked": true,
+    "device_write_performed": false
+  },
+  "schema": 1
+}

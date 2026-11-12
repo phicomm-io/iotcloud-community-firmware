@@ -73,7 +73,7 @@ static void assert_v9_prefix(const app_storage_t *before){
 }
 int main(void){
     assert(M1_CONFIG_VERSION==11&&sizeof(m1_storage_v8_t)==2856);
-    assert(sizeof(m1_storage_v9_t)==2928&&sizeof(m1_storage_v10_t)==2944&&sizeof(app_storage_t)==3064);
+    assert(sizeof(m1_storage_v9_t)==2928&&sizeof(m1_storage_v10_t)==2944&&sizeof(m1_storage_v11_t)==3064 && offsetof(app_storage_t,local_auth)==3064);
     assert(offsetof(app_storage_t,display.style)==sizeof(m1_storage_v9_t));
     assert(sizeof(m1_display_style_t)==8&&sizeof(m1_display_lane_config_t)==32);
     for(unsigned configured=0;configured<2;configured++){
@@ -160,5 +160,5 @@ int main(void){
             subprocess.run([os.environ.get('CC', 'cc'), '-std=c99', '-Wall', '-Wextra', '-Werror',
                             '-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined',
                             '-I'+str(ROOT), '-I'+str(ROOT/'tests/host'), '-I'+str(ROOT/'M1'), '-I'+str(json_dir),
-                            str(probe), '-o', str(binary)], check=True)
+                            str(probe), str(ROOT / 'common/local_auth.c'), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)

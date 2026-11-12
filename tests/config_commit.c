@@ -46,7 +46,7 @@ typedef struct {
 #define require_noerr(e,l) do { if ((e) != 0) goto l; } while (0)
 #define para_log(...) ((void)0)
 
-enum { FLASH_SIZE = 8192, APP_SIZE = 2928, EXTRA_OFFSET = 6144, MAX_OPS = 256 };
+enum { FLASH_SIZE = 8192, APP_SIZE = 4648, EXTRA_OFFSET = 6144, MAX_OPS = 256 };
 typedef struct { char kind; unsigned part, offset, length; } operation_t;
 static uint8_t flash[2][FLASH_SIZE], app[APP_SIZE];
 static mico_logic_partition_t partitions[2] = {{FLASH_SIZE}, {FLASH_SIZE}};
@@ -59,6 +59,7 @@ static unsigned indeterminate_hooks;
 static operation_t operations[MAX_OPS];
 static unsigned operation_count, mutations, legacy_calls, restore_calls;
 static unsigned fault_at, fault_mode, allocation_count, allocation_fail_at, live_bytes, peak_bytes;
+static unsigned write_allocation_limit, write_allocation_denied, max_write_length, write_noadvance_at;
 static unsigned power_at;
 static bool power_after, persistent_reads;
 static jmp_buf power_jump;
@@ -112,6 +113,14 @@ static OSStatus MicoFlashWrite(mico_partition_t p, uint32_t *offset, uint8_t *da
 {
     assert(*offset + length <= FLASH_SIZE);
     bool fail = hit('W', p, *offset, length);
+    if (length > max_write_length) max_write_length = length;
+    /* The pinned kernel allocates length bytes before programming. Its MOC
+     * caller discards failure status, leaving the offset unchanged. */
+    if ((write_allocation_limit && length > write_allocation_limit) || write_noadvance_at == operation_count) {
+        write_allocation_denied++;
+        completed();
+        return kNoErr;
+    }
     if (fail && (fault_mode == BEFORE || fault_mode == PERSISTENT)) return FAULT;
     unsigned start = *offset, n = fail && fault_mode == SHORT ? length / 2 : length;
     mutations++;
@@ -167,6 +176,7 @@ static void reset_io(void)
     assert(!live_bytes);
     operation_count = mutations = legacy_calls = restore_calls = 0;
     fault_at = fault_mode = allocation_count = allocation_fail_at = peak_bytes = 0;
+    write_allocation_limit = write_allocation_denied = max_write_length = write_noadvance_at = 0;
     power_at = 0; power_after = persistent_reads = false;
     para_flash_mutex = 0;
 }
@@ -379,6 +389,38 @@ static void allocation_faults(void)
     }
     printf("actual SDK allocation failures: %u, peak scratch=1024 bytes PASS\n", n);
 }
+static void bounded_platform_writes(void)
+{
+    setup();
+    write_allocation_limit = 1024;
+    uint32_t offset = sizeof(system_config_t);
+    /* Reproduce the old call's silent failure under a fragmented heap. */
+    assert(MicoFlashWrite(0, &offset, app, sizeof(app)) == kNoErr);
+    assert(offset == sizeof(system_config_t) && write_allocation_denied == 1 && !mutations);
+    reset_io();
+    write_allocation_limit = 1024;
+    set_revision(8);
+    assert(mico_system_context_update(mico_system_context_get()) == kNoErr);
+    assert(max_write_length <= 1024 && !write_allocation_denied);
+    assert(raw_valid(0) && raw_valid(1) && !memcmp(flash[0], flash[1], FLASH_SIZE));
+    assert(!memcmp(flash[0] + sizeof(system_config_t), app, sizeof(app)));
+    assert(!live_bytes && peak_bytes <= 1024 && reboot() == 8);
+
+    operation_t normal[MAX_OPS];
+    unsigned n = normal_operations(normal), faults = 0;
+    for (unsigned i = 0; i < n; ++i) {
+        if (normal[i].kind != 'W') continue;
+        setup(); set_revision(8); write_noadvance_at = i + 1;
+        OSStatus status = mico_system_context_update(mico_system_context_get());
+        if (status) set_revision(7);
+        uint32_t ram = revision();
+        assert(raw_valid(0) || raw_valid(1));
+        assert(!para_commit_uncertain && !indeterminate_hooks && !live_bytes && !para_flash_mutex);
+        assert(reboot() == ram);
+        faults++;
+    }
+    printf("actual SDK hidden kernel allocation: 4648-byte app with 1024-byte write limit, %u silent no-offset failures, verified cold boot PASS\n", faults);
+}
 /* Adjust an otherwise ordinary application's final two bytes to a given CRC. */
 static void app_choose_crc(uint16_t target)
 {
@@ -489,6 +531,7 @@ static void unknown_commit(void)
 }
 int main(void)
 {
+    if (getenv("CONFIG_COMMIT_BOUNDED_WRITE_ONLY")) { bounded_platform_writes(); return 0; }
     /* Resets abandon old process heaps; the separate run disables leak-only
      * reporting while retaining address/undefined-behaviour checks. */
     if (getenv("CONFIG_COMMIT_POWERLOSS")) { powerloss(); return 0; }
@@ -497,6 +540,7 @@ int main(void)
     boot_faults();
     recovery_and_boundaries();
     allocation_faults();
+    bounded_platform_writes();
     erased_crc_is_not_a_commit();
     crc_equal_different_contents();
     unknown_commit();

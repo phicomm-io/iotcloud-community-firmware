@@ -43,17 +43,17 @@ int main(void){
  for(unsigned i=0;i<7;i++)assert(seen[i]==5);
  for(unsigned i=0;i<7;i++)assert(!states_step(&c,&s,false,&snapshot_sent));
  assert(sent&&!state_pending);
- /* Continuous urgent filter changes must not starve six ordinary leaves or
+ /* Continuous urgent filter changes must not starve seven HA leaves or
   * first READY coverage. Execute the production choice plus leaf scheduler. */
  state_seen=0;sent=false;state_index=0;filter_turn=false;
  unsigned full=0;for(unsigned i=0;i<28;i++){
   state_pending|=127;
   if(filter_priority(true)){
-   full++;state_pending&=~64u;state_seen|=64u;sent=state_seen==127;
+   full++;
   }else assert(!states_step(&c,&s,false,&snapshot_sent));
   if(i>=13)assert(sent);
  }
- assert(full==14);for(unsigned i=0;i<6;i++)assert(seen[i]>=7);
+ assert(full==14);for(unsigned i=0;i<7;i++)assert(seen[i]>=7);
  return 0;
 }
 '''.replace('/* PRODUCTION */',scheduler)

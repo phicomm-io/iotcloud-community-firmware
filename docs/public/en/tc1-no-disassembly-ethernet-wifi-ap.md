@@ -1,8 +1,10 @@
 # TC1 illustrated OTA guide
 
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
 The computer serves firmware over **Ethernet** and sends the trigger over **Wi-Fi**, while a router or AP supplies the OTA network. No case opening, soldering or Python installation is needed. Supports Windows, macOS and Linux.
 
-**For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.
+**For TC1 A1 hardware (EMW3031 / MK3031), stock firmware 1.0.0.26, 1.0.0.24 or 1.0.0.21.** Other stock versions, TC1 A2 and the A1 air purifier are outside this procedure.
 
 <!-- os-picker -->
 
@@ -17,6 +19,7 @@ Create a `tc1-flash` folder. Download the firmware and **one trigger file matchi
 | [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) | Prepared firmware for the TFTP directory; keep this filename |
 | [tftp-trigger.bin (payload, 1.0.0.26)](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | Trigger sent to the stock OTA endpoint; for 1.0.0.26 |
 | [tftp-trigger-1.0.0.24.bin (payload, 1.0.0.24)](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | Same trigger with the address shifted for 1.0.0.24 |
+| [tftp-trigger-1.0.0.21.bin (payload, 1.0.0.21)](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.21.bin) | Same trigger with the address shifted for 1.0.0.21 |
 
 The firmware is **649,344 bytes**; each trigger file is **397 bytes**. Verify with [SHA256SUMS](assets/SHA256SUMS). See [Firmware updates](firmware-update) for later upgrades.
 
@@ -215,7 +218,7 @@ curl --fail --max-time 30 -o tc1-download-check.bin tftp://10.0.0.2/mico_ota.bin
 
 <!-- /os -->
 
-If the client uses a different OS, use its curl command or a TFTP client in **binary / octet** mode. Compare the downloaded size and SHA-256 with the original. A download on the server itself does not prove the AP's wireless path works.
+If the client uses a different OS, use its curl command or a TFTP client in **binary / octet** mode. Download from the AP-connected client and compare the size and SHA-256 with the original.
 
 ## 5. Put TC1 in provisioning mode
 
@@ -253,7 +256,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 <!-- /os -->
 
-Check **`VERSION` = `1.0.0.26` or `1.0.0.24`**. The screenshot's `COMMITID` is `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`. Stop if the version or build identifier differs; the payload must match the detected version (use `tftp-trigger.bin` for 1.0.0.26 and `tftp-trigger-1.0.0.24.bin` for 1.0.0.24). A matching SSID alone does not prove compatibility.
+Check **`VERSION` = `1.0.0.26`, `1.0.0.24` or `1.0.0.21`** (1.0.0.21 reports `COMPILE_TIME` `Oct 29 2017 11:09:21`; the other two report `Apr 13 2018 10:09:06`). The screenshot's `COMMITID` is `d1ecc7616f55bbf781be3bd80e23bab7c03dc047` (`d22fb6bcbbb63537ce33e596278963424bf11fbb` for 1.0.0.21). Stop if the version or build identifier differs; the payload must match the detected version (use `tftp-trigger.bin` for 1.0.0.26, `tftp-trigger-1.0.0.24.bin` for 1.0.0.24 and `tftp-trigger-1.0.0.21.bin` for 1.0.0.21).
 
 <!-- os:windows -->
 
@@ -263,7 +266,7 @@ Check **`VERSION` = `1.0.0.26` or `1.0.0.24`**. The screenshot's `COMMITID` is `
 
 ## 6. Send the trigger file and wait
 
-Open a terminal in the `tc1-flash` folder containing **`tftp-trigger.bin`** (use `tftp-trigger-1.0.0.24.bin` for a 1.0.0.24 device). Confirm TFTP is running, Ethernet still has `10.0.0.2`, and Wi-Fi is connected to TC1. Send **once**:
+Open a terminal in the `tc1-flash` folder containing **`tftp-trigger.bin`** (use `tftp-trigger-1.0.0.24.bin` for a 1.0.0.24 device or `tftp-trigger-1.0.0.21.bin` for a 1.0.0.21 device). Confirm TFTP is running, Ethernet still has `10.0.0.2`, and Wi-Fi is connected to TC1. Send **once**:
 
 <!-- os:windows -->
 
@@ -291,7 +294,7 @@ curl --noproxy '*' --max-time 30 --header 'Content-Type: application/json' --dat
 
 <!-- /os -->
 
-`OTA` or repeated `A` characters indicate receipt, **not successful flashing**. The provisioning hotspot disappearing and Wi-Fi disconnecting are expected during the network switch. Even if curl times out, observe the device and download before considering another attempt.
+After receiving `OTA` or repeated `A` characters, wait for download and reboot. The provisioning hotspot disappearing and Wi-Fi disconnecting are expected during the network switch. Even if curl times out, observe the device and download before considering another attempt.
 
 TC1 joins `PHICOMM_OTA_AP` and downloads `mico_ota.bin` over Ethernet through the AP. Where logs or progress are available, look for a read request and complete transfer. **The computer's Wi-Fi does not need to switch to the AP.**
 
@@ -305,7 +308,7 @@ The new open hotspot should be **`TC1_A1-AP-<last six MAC characters in uppercas
 
 Join it from a computer or phone, open **`http://192.168.0.1/`**, and confirm the community WebUI loads. Configure your normal Wi-Fi there. See [TC1 operation](tc1-guide) for controls and pairing.
 
-**The new hotspot and accessible local WebUI together confirm completion.** An HTTP response, loss of the old hotspot or a TFTP transfer alone does not.
+Join the new hotspot and check the model and version in the local WebUI to complete installation.
 
 ## 8. Stop temporary services and restore networking
 

@@ -1,5 +1,15 @@
 # A1 → 数据提供者的传感器会话 v2
 
+## RC5 接口
+
+RC5 使用 MessagePack LAN v3 传感器帧，以及 LAN v4 业务分片协议。token 在 UDP 帧中为 16 字节 bin，计数器为原生 uint32。配对、会话授权与业务命令权限分开。实现见 `common/lan_wire.h`、`common/lan_wire_v4.h` 与 `common/local_auth.h`。
+
+中英文格式与代码示例见[设备接口与协议](public/device-api.md)。
+
+## 稳定版 0.9.27 接口
+
+以下 JSON 结构、会话 v2 与整数位模式说明适用于 0.9.27。
+
 A1 单方面配置提供者 MAC 与可选 IP。M1 和 DAIKIN 使用相同的运行时会话协议，不按型号选择数据能力。M1 原 Flash 许可字段保留布局但不参与授权；不会为会话写 Flash。A1 组控制协议不变。
 
 A1 经同账号 `phicomm/v2/<user_key>/sensor/<device_id>/command` 主题发送：

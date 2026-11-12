@@ -99,8 +99,13 @@ int main(void) {
     ph_mqtt_app_error(PH_MQTT_ERROR_APP_RECEIPT_ADMISSION,-1);
     ph_mqtt_error(PH_MQTT_ERROR_SESSION,-1);
     evidence(PH_MQTT_CAUSE_UNKNOWN,14);
-    char wire[2304]="{\"data\":{}}";
-    size_t used=ph_mqtt_diag_append(wire,sizeof(wire),strlen(wire),true);
-    assert(used>0 && strstr(wire,"\"operation\":14") && strstr(wire,"\"mqtt_failure\":{") && strstr(wire,"\"read\":["));
+    unsigned char wire[2304];ph_writer writer;ph_buf buffer;
+    assert(phw_init_fixed(&writer,PH_WIRE_MSGPACK,&buffer,wire,sizeof(wire)));
+    phw_begin(&writer,NULL,false);ph_mqtt_diag_write_mp(&writer,true);phw_end(&writer);
+    size_t used=phw_finish_fixed(&writer);ph_value root,failure,value;int64_t operation;
+    assert(used && phv_parse(PH_WIRE_MSGPACK,wire,used,&root));
+    assert(phv_get(&root,"mqtt_failure",&failure));
+    assert(phv_get(&failure,"operation",&value)&&phv_int(&value,&operation)&&operation==14);
+    assert(phv_get(&failure,"read",&value)&&value.kind==PHV_ARRAY&&value.count==4);
     puts("host first-failure evidence: admission/write/read/framing/SDK/lifecycle PASS");
 }

@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Reserve unmaterialized input and small dispatch scratch only. The JSON
- * allocator checks the live heap on every allocation instead of assuming a
- * full 12 KiB graph per request. No active-request count controls admission.
+/* Reserve unmaterialized input and small dispatch scratch only. The binary
+ * allocator checks the live heap on every allocation. No active-request count
+ * controls admission.
  * Core/network headroom is a soft floor, not a closed-SDK heap partition. */
 /* MiCO release_log also defines DEBUG; product makefiles select this policy
  * from BUILD_TYPE rather than the compiler's logging/assertion switches. */
@@ -19,6 +19,7 @@ typedef struct {
     uint32_t reserved, active, denied, waiting, minimum_free;
     uint32_t json_live, json_peak, json_failed, json_denied;
     uint32_t mqtt_pending, mqtt_peak, mqtt_overflow, mqtt_max_delay;
+    uint32_t wire_alloc_failed, wire_guard_denied;
 } service_memory_state_t;
 static inline unsigned service_memory_cost(size_t input) {
     return input <= 16384 ? SERVICE_MEMORY_WORK + (unsigned)input : 0;

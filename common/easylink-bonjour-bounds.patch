@@ -1,0 +1,147 @@
+--- a/MiCO/system/easylink/internal/easylink_bonjour.c
++++ b/MiCO/system/easylink/internal/easylink_bonjour.c
+@@ -23,59 +23,54 @@
+ #include "system_internal.h"
+ 
+ 
+-static void _bonjour_generate_txt_record( char *txt_record, uint32_t easyLink_id, WiFi_Interface interface,
+-                                          system_context_t * const inContext )
++/* Append escaped TXT values without reading from the destination buffer.
++ * MiCO represents a literal dot as "/." in this existing TXT protocol. */
++static bool _bonjour_txt_field(char *out, size_t capacity, size_t *used,
++                               const char *key, const char *value)
+ {
+-    char *temp_txt2 = NULL;
++    size_t n = strlen(key), i;
++    if (*used >= capacity || n >= capacity - *used) return false;
++    memcpy(out + *used, key, n); *used += n;
++    for (i = 0; value[i]; ++i) {
++        size_t width = value[i] == '.' ? 2u : 1u;
++        if (width >= capacity - *used) return false;
++        if (width == 2) out[(*used)++] = '/';
++        out[(*used)++] = value[i];
++    }
++    if (1u >= capacity - *used) return false;
++    out[(*used)++] = '.'; out[*used] = 0;
++    return true;
++}
+ 
+-    temp_txt2 = __strdup_trans_dot( FIRMWARE_REVISION );
+-    sprintf( txt_record, "FW=%s.", temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( HARDWARE_REVISION );
+-    sprintf( txt_record, "%sHD=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( PROTOCOL );
+-    sprintf( txt_record, "%sPO=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( inContext->micoStatus.rf_version );
+-    sprintf( txt_record, "%sRF=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( inContext->micoStatus.mac );
+-    sprintf( txt_record, "%sMAC=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( MicoGetVer( ) );
+-    sprintf( txt_record, "%sOS=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( MODEL );
+-    sprintf( txt_record, "%sMD=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    temp_txt2 = __strdup_trans_dot( MANUFACTURER );
+-    sprintf( txt_record, "%sMF=%s.", txt_record, temp_txt2 );
+-    free( temp_txt2 );
+-
+-    if ( interface == Soft_AP )
+-    {
+-        sprintf( txt_record, "%swlan unconfigured=T.", txt_record );
+-        sprintf( txt_record, "%sFTC=T.", txt_record );
+-    }
+-    else
+-    {
+-        sprintf( txt_record, "%swlan unconfigured=F.", txt_record );
++static OSStatus _bonjour_generate_txt_record(char *txt_record, size_t capacity,
++                                            uint32_t easyLink_id, WiFi_Interface interface,
++                                            system_context_t * const inContext)
++{
++    size_t used = 0;
++    char id[9];
++    if (!capacity) return kSizeErr;
++    txt_record[0] = 0;
++#define BONJOUR_FIELD(key, value) do { \
++    if (!_bonjour_txt_field(txt_record, capacity, &used, key, value)) return kSizeErr; \
++} while (0)
++    BONJOUR_FIELD("FW=", FIRMWARE_REVISION);
++    BONJOUR_FIELD("HD=", HARDWARE_REVISION);
++    BONJOUR_FIELD("PO=", PROTOCOL);
++    BONJOUR_FIELD("RF=", inContext->micoStatus.rf_version);
++    BONJOUR_FIELD("MAC=", inContext->micoStatus.mac);
++    BONJOUR_FIELD("OS=", MicoGetVer());
++    BONJOUR_FIELD("MD=", MODEL);
++    BONJOUR_FIELD("MF=", MANUFACTURER);
++    BONJOUR_FIELD("wlan unconfigured=", interface == Soft_AP ? "T" : "F");
+ #ifdef MICO_CONFIG_SERVER_ENABLE
+-        sprintf(txt_record, "%sFTC=T.", txt_record);
++    BONJOUR_FIELD("FTC=", "T");
+ #else
+-        sprintf( txt_record, "%sFTC=F.", txt_record );
++    BONJOUR_FIELD("FTC=", interface == Soft_AP ? "T" : "F");
+ #endif
+-    }
+-
+-    sprintf( txt_record, "%sID=%lx.", txt_record, easyLink_id );
++    snprintf(id, sizeof(id), "%lx", (unsigned long)easyLink_id);
++    BONJOUR_FIELD("ID=", id);
++#undef BONJOUR_FIELD
++    return kNoErr;
+ }
+ 
+ OSStatus easylink_bonjour_start( WiFi_Interface interface, uint32_t easyLink_id, system_context_t * const inContext )
+@@ -83,7 +78,7 @@
+     char *temp_txt = NULL;
+     OSStatus err = kNoErr;
+     net_para_st para;
+-    mdns_init_t init;
++    mdns_init_t init = {0};
+ 
+     temp_txt = malloc( 500 );
+     require_action( temp_txt, exit, err = kNoMemoryErr );
+@@ -116,7 +111,8 @@
+ 
+     init.service_port = MICO_CONFIG_SERVER_PORT;
+ 
+-    _bonjour_generate_txt_record( temp_txt, easyLink_id, interface, inContext );
++    err = _bonjour_generate_txt_record( temp_txt, 500, easyLink_id, interface, inContext );
++    require_noerr( err, exit );
+ 
+     init.txt_record = (char*) __strdup( temp_txt );
+ 
+@@ -125,11 +121,10 @@
+     else
+         mdns_add_record( init, interface, 10 );
+ 
++    exit:
+     free( init.host_name );
+     free( init.instance_name );
+     free( init.txt_record );
+-
+-    exit:
+     if ( temp_txt ) free( temp_txt );
+     return err;
+ }
+@@ -142,7 +137,8 @@
+     temp_txt = malloc( 500 );
+     require_action( temp_txt, exit, err = kNoMemoryErr );
+ 
+-    _bonjour_generate_txt_record( temp_txt, easyLink_id, interface, inContext );
++    err = _bonjour_generate_txt_record( temp_txt, 500, easyLink_id, interface, inContext );
++    require_noerr( err, exit );
+ 
+     mdns_update_txt_record( "_easylink_config._tcp.local.", interface, temp_txt );
+ 

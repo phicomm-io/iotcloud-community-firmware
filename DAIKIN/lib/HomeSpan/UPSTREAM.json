@@ -23,7 +23,11 @@
     "Use the complete 64-bit HAP record nonce counter and close the session instead of reusing a nonce on exhaustion.",
     "Replace iostream/locale serialization with a narrow byte writer while preserving decimal JSON, binary TLVs and 1024-byte encrypted record boundaries.",
     "Skip empty output frames, close sessions after encryption or short-write failures, and retain SHA-384 count/send behavior.",
-    "Match TLV malloc/realloc buffers with a free deleter and keep owning HAP output objects noncopyable."
+    "Match TLV malloc/realloc buffers with a free deleter and keep owning HAP output objects noncopyable.",
+    "Use newlib siscanf for the eleven integer/character-only input formats, sharing the scanner already linked by ESP-IDF; retain the host libc backend for host fixtures.",
+    "Parse HAP scalar write envelopes with quote-aware bounded tokenization; count real rows and validate the complete envelope before dispatch.",
+    "Decode JSON escapes and UTF-16 surrogate pairs to strict UTF-8 in place; reject NUL, malformed strings and bounded-name overflow before allocating pending values.",
+    "Escape string values in HAP JSON responses; expose adapter-selected ConfiguredName byte limits without changing existing characteristic identities."
   ],
   "integration_storage": {
     "layout": "Existing 4 MiB Flash dual-OTA table is retained",
@@ -36,6 +40,15 @@
     "DAIKIN/tests/hub/http.cpp",
     "DAIKIN/tests/hub/storage.cpp",
     "DAIKIN/tests/test_hap_characteristics.py",
-    "DAIKIN/tests/test_hap_output.py"
-  ]
+    "DAIKIN/tests/test_hap_output.py",
+    "DAIKIN/tests/test_hap_scan.py",
+    "DAIKIN/tests/test_home_name_graph.py",
+    "DAIKIN/tests/test_device_names.py",
+    "DAIKIN/tests/hub/home_names.cpp"
+  ],
+  "scan_backend": {
+    "target": "newlib siscanf from the pinned ESP32 GCC 8.4.0 toolchain; no new library copy",
+    "semantics": "Same sscanf conversions and return values except floating-point conversions, which none of the eleven literal formats use",
+    "reference": "https://sourceware.org/newlib/libc.html#siscanf"
+  }
 }

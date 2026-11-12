@@ -25,7 +25,7 @@ def release(tag):
 
 
 class PublishTests(unittest.TestCase):
-    def test_smoke_requires_ten_v1_and_nine_frozen_legacy_routes_on_both_mirrors(self):
+    def test_smoke_requires_eleven_v1_and_nine_frozen_legacy_routes_on_both_mirrors(self):
         current, bridge = release('v1.1.0'), release('v1.0.0')
         visited = []
         def response(request, **kwargs):
@@ -43,9 +43,10 @@ class PublishTests(unittest.TestCase):
         with patch.object(publish.urllib.request, 'build_opener') as factory:
             factory.return_value.open.side_effect = response
             publish.smoke(current, bridge)
-        self.assertEqual(len(visited), 38)
+        self.assertEqual(len(visited), 40)
         self.assertTrue(any('/ota/v1/daikin/hub/' in url for url in visited))
         self.assertFalse(any('/ota/daikin/hub/' in url for url in visited))
+        self.assertFalse(any('/ota/bry88bba15g/' in url for url in visited))
         self.assertTrue(all('release=v1.0.0' in url for url in visited if '/ota/v1/' not in url))
 
     def test_later_release_cannot_promote_without_bridge(self):

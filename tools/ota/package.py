@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'release'))
 from release_version import parse_version
 DOMAIN = b'PHICOMM-OTA-V1'
-MODELS = {'tc1': 1, 'm1': 2, 'a1': 3, 'daikin': 4}
+MODELS = {'tc1': 1, 'm1': 2, 'a1': 3, 'daikin': 4, 'bry88bba15g': 6}
 
 def header(image, model, version, commit, key_id=1, channel=None):
     identity = parse_version(version)

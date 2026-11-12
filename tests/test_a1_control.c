@@ -1,4 +1,4 @@
-/* Production local-control and input handoff, with JSON admission unavailable.
+/* Production local-control and input handoff, with wire allocations unavailable.
  * Feature persistence is tested separately by the production runtime simulator. */
 #define FEATURE_DEVICE_A1
 #include "../A1/a1.h"
@@ -12,7 +12,7 @@ a1_state_t a1_state;
 static a1_config_t config={.speed=60,.led_enabled=1,.brightness=255};
 a1_config_t *a1_config=&config;
 static automation_config_t automations;
-static unsigned changes,json_attempts,actions,resets,reset_full,missed,busy_logs;
+static unsigned changes,wire_attempts,actions,resets,reset_full,missed,busy_logs;
 static bool service_locked,automatic;
 static unsigned limit=100,effect;
 void a1_config_get(a1_config_t *out){*out=config;}
@@ -23,34 +23,32 @@ uint64_t service_memory_failures(void){return 0;}
 bool service_caller_graph_failed(uint64_t before){(void)before;return false;}
 void service_event(const char *l,const char *m,const char *e){(void)l;(void)m;if(!strcmp(e,"missed"))++missed;if(!strcmp(e,"busy"))++busy_logs;}
 bool feature_group_active(void){return false;}
-bool feature_group_control(const char *kind,json_object *o){(void)kind;(void)o;abort();}
+bool feature_group_control_mp(const char *kind,const ph_value *o){(void)kind;(void)o;abort();}
 bool feature_fan_auto(void){return automatic;}
 unsigned feature_fan_limit(void){return limit;}
 int feature_fan_apply(unsigned mode,int speed){assert(service_locked);if(mode)automatic=mode==3?!automatic:mode==2;if(automatic && speed>0)limit=speed;return automatic?2:1;}
 void feature_manual_fan(bool on){(void)on;}
-int feature_light_select(unsigned v,json_object **response){assert(!response);effect=v==255?(effect+1)%5:v;return 200;}
+int feature_light_select_mp(unsigned v,ph_writer *response){assert(!response);effect=v==255?(effect+1)%5:v;return 200;}
 const char *a1_filter_change(unsigned h,bool reset){(void)h;assert(reset);++actions;return "accepted";}
 bool a1_reboot_later(uint32_t n){(void)n;++actions;return true;}
 bool a1_reset(bool full){++resets;reset_full+=full;return true;}
 void automation_load(automation_config_t *out){*out=automations;}
 bool automation_save(const automation_config_t *c){automations=*c;return true;}
-json_object *service_parse(const void *data,size_t n){
-    if(!data || !n || n>8192 || memchr(data,0,n))return NULL;
-    for(size_t i=0;i+6<=n;i++)if(!memcmp((const char *)data+i,"\\u0000",6))return NULL;
-    struct json_tokener *t=json_tokener_new();assert(t);
-    json_object *o=json_tokener_parse_ex(t,data,n);json_tokener_free(t);return o;
-}
-static json_object *denied_object(void){++json_attempts;return NULL;}
-#define json_object_new_object denied_object
+void service_cache_changed(unsigned mask){(void)mask;}
+void *ph_wire_malloc(size_t size){(void)size;++wire_attempts;return NULL;}
+void ph_wire_free(void *p){assert(!p);}
 #include "../A1/control.c"
 #include "../common/automation.c"
-#undef json_object_new_object
+#include "mp_fixture_vectors.inc"
 
 static void press(unsigned clicks){assert(a1_input_push(A1_INPUT_BUTTON,0,clicks,0,0));a1_input_poll();}
 static bool native_control(const char *kind,const char *text)
 {
-    json_object *o=a1_json_parse(text,strlen(text));if(!o)return false;
-    bool ok=a1_control_local(kind,o);json_object_put(o);return ok;
+    for(unsigned i=0;i<sizeof(fixture_vectors)/sizeof(*fixture_vectors);i++)if(!strcmp(text,fixture_vectors[i].text)){
+        ph_value p;if(!phv_parse(PH_WIRE_MSGPACK,fixture_vectors[i].bytes,fixture_vectors[i].length,&p))return false;
+        return a1_control_mp(kind,&p,true);
+    }
+    assert(!"missing constant MP fixture");return false;
 }
 int main(void)
 {
@@ -102,13 +100,12 @@ int main(void)
     assert(!a1_input_push(A1_INPUT_BUTTON,3,1,0,0));
     assert(!a1_input_push(A1_INPUT_BUTTON,0,1,1,0));
     /* Native MQTT/group adapters join the same serializer as panel actions. */
-    json_object *native=json_tokener_parse("{\"speed\":33}");assert(native);
-    assert(a1_control_local("fan",native));json_object_put(native);
+    assert(native_control("fan","{\"speed\":33}"));
     assert(config.fan_on && config.speed==33);
-    assert(json_attempts==0 && !service_locked);
+    assert(wire_attempts==0 && !service_locked);
     /* Transport schema rejects wrong types/ranges before changing state. */
     a1_config_t saved=config;
-    assert(!a1_control_local("fan",NULL));
+    assert(!a1_control_mp("fan",NULL,true));
     assert(!native_control("light","{\"brightness\":1,\"color\":{\"r\":1,\"b\":2}}"));
     assert(!native_control("fan","{\"on\":1}"));
     assert(!native_control("fan","{\"speed\":101}"));
@@ -126,7 +123,7 @@ int main(void)
     assert(!config.led_enabled && config.led_always_on && config.brightness==255 && config.red==0 && config.green==128 && config.blue==255);
     assert(native_control("child_lock","{\"enabled\":true}"));assert(config.child_lock);
     assert(native_control("child_lock","{\"enabled\":false}"));assert(!config.child_lock);
-    assert(json_attempts==0 && !service_locked);
+    assert(wire_attempts==0 && !service_locked);
     puts("PASS A1 typed controls without JSON: gestures, toggles, lock, bounded FIFO, overflow, expiry, busy, reset, wrap");
     return 0;
 }

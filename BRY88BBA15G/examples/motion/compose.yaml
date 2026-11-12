@@ -1,0 +1,21 @@
+services:
+  go2rtc:
+    image: alexxit/go2rtc:1.9.15
+    restart: unless-stopped
+    ports:
+      - "1984:1984"
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+  motion-push:
+    build:
+      context: ../..
+      dockerfile: examples/motion/Dockerfile
+    restart: unless-stopped
+    command: ["--url", "${G3_URL:?set G3_URL}", "--cameras", "/config/cameras.json", "--host", "0.0.0.0"]
+    ports:
+      - "8099:8099"
+    environment:
+      G3_MOTION_TOKEN: ${G3_MOTION_TOKEN:?set a random webhook token}
+      IOTCLOUD_AUTH: ${IOTCLOUD_AUTH:-}
+    volumes:
+      - ./cameras.json:/config/cameras.json:ro

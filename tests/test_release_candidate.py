@@ -291,13 +291,16 @@ class CandidatePublicationTests(unittest.TestCase):
         block = step('Publish an isolated GitHub prerelease and candidate catalog')
         self.assertIn("if: steps.release-channel.outputs.channel == 'candidate'", block)
         self.assertIn("if: steps.release-channel.outputs.channel == 'stable'", step('Stage GitHub release and immutable OTA assets'))
-        self.assertIn("if: steps.release-channel.outputs.channel == 'stable'", step('Build and publish public Pages allowlist'))
+        pages = step('Build and publish public Pages allowlist')
+        self.assertNotIn("if: steps.release-channel.outputs.channel == 'stable'", pages)
+        self.assertIn("PHICOMM_PAGES_INCLUDE_CANDIDATES: ${{ steps.release-channel.outputs.channel == 'candidate' && '1' || '0' }}", pages)
         commands = textwrap.dedent(block.split('        run: |\n', 1)[1])
         for existing in (False, True):
             with self.subTest(existing=existing), tempfile.TemporaryDirectory() as tmp:
                 directory = Path(tmp)
                 (directory / 'release').mkdir()
                 (directory / 'release/image.bin').write_bytes(b'image')
+                (directory / 'release/native.rbl').write_bytes(b'native image')
                 (directory / 'release/SHA256SUMS').write_bytes(b'checksums')
                 executable = directory / 'bin'
                 executable.mkdir()
@@ -325,7 +328,7 @@ class CandidatePublicationTests(unittest.TestCase):
                     self.assertIn('--prerelease', args)
                     self.assertIn('--latest=false', args)
                 python = [args for command, *args in calls if command == 'python3']
-                self.assertEqual(python, [['tools/release/publish.py', 'release'], ['tools/release/publish.py', 'release', '--candidate']])
+                self.assertEqual(python, [['tools/release/deploy_worker.py'], ['tools/release/publish.py', 'release'], ['tools/release/publish.py', 'release', '--candidate']])
 
 
 if __name__ == '__main__':

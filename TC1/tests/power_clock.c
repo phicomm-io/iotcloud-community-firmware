@@ -7,6 +7,7 @@
 #include <math.h>
 #include "TC1/user_power.h"
 #define MCU_CLOCK_HZ 100000000u
+#define kNoErr 0
 #define INPUT_PULL_UP 0
 #define IRQ_TRIGGER_FALLING_EDGE 0
 #define POWER 15
@@ -38,9 +39,9 @@ static uint32_t platform_get_cycle_count(void) {
 }
 #include "sdk-clock.inc"
 static uint64_t mico_nanosecond_clock_value(void) { ++ns_reads;return platform_get_nanosecond_clock_value(); }
-static void MicoGpioInitialize(unsigned pin,unsigned mode) { assert(pin==POWER && mode==INPUT_PULL_UP); }
-static void MicoGpioEnableIRQ(unsigned pin,unsigned mode,void (*handler)(void *),void *arg) {
-    assert(pin==POWER && mode==IRQ_TRIGGER_FALLING_EDGE && !arg);power_irq=handler;
+static int MicoGpioInitialize(unsigned pin,unsigned mode) { assert(pin==POWER && mode==INPUT_PULL_UP);return 0; }
+static int MicoGpioEnableIRQ(unsigned pin,unsigned mode,void (*handler)(void *),void *arg) {
+    assert(pin==POWER && mode==IRQ_TRIGGER_FALLING_EDGE && !arg);power_irq=handler;return 0;
 }
 #include "clock-power.inc"
 

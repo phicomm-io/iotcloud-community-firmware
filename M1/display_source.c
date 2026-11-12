@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "m1.h"
-#include "../common/json_build.h"
-#include "../common/json_number_checked.h"
-#include "json_object_private.h"
-#include "printbuf.h"
+#include "../common/typed_wire.h"
+#include "../common/sensor_mp.h"
 #include <math.h>
 
 /* A bounded cache per configured lane. User display values never enter the
@@ -11,6 +9,8 @@
 typedef struct {
     float value;
     uint32_t revision, received_ms, age_ms, lease_ms, boot, sequence, retired_boot[4];
+    uint32_t metadata_boot, descriptor_revision;
+    bool descriptor_valid;
     uint16_t color;
     uint16_t number;
     uint8_t format;
@@ -18,13 +18,21 @@ typedef struct {
 } display_cache_t;
 static display_cache_t display_cache[M1_DISPLAY_LANES];
 
-/* The pinned json-c type check dereferences NULL, and object lookup assumes
- * an object. Validate both before inspecting untrusted nested input. */
-static bool display_is_type(json_object *o,enum json_type type)
-{return o && json_object_is_type(o,type);}
-static json_object *display_get(json_object *o,const char *key)
-{return display_is_type(o,json_type_object)?json_object_object_get(o,key):NULL;}
-
+/* Views only borrow the request for the duration of a synchronous call. */
+static ph_value display_get(ph_value o,const char *key)
+{ph_value v={.kind=PHV_MISSING};phv_get(&o,key,&v);return v;}
+static ph_value display_at(ph_value o,unsigned i)
+{ph_value v={.kind=PHV_MISSING};phv_at(&o,i,&v);return v;}
+static bool display_text(ph_value o,const char *s){return phv_equal_text(&o,s);}
+static bool display_float(ph_value o,float *out)
+{double n;if(!phv_number(&o,&n))return false;*out=(float)n;return isfinite(n)&&isfinite(*out);}
+#define display_number display_float
+static bool display_int(ph_value o,const char *key,int low,int high,unsigned *out)
+{ph_value v=display_get(o,key);int64_t n;if(!phv_int(&v,&n)||n<low||n>high)return false;*out=(unsigned)n;return true;}
+static bool display_keys(ph_value o,const char *const *keys,unsigned count)
+{if(o.kind!=PHV_MAP)return false;ph_iterator it;ph_value v;char key[128];phv_iter(&o,&it);while(phv_next(&it,key,&v)){bool found=false;for(unsigned i=0;i<count;i++)if(!strcmp(key,keys[i]))found=true;if(!found)return false;}return true;}
+static int display_enum(ph_value o,const char *const *names,unsigned count)
+{for(unsigned i=0;i<count;i++)if(display_text(o,names[i]))return (int)i;return -1;}
 #define metric_names m1_display_metric_names
 #define unit_names m1_display_unit_names
 
@@ -39,26 +47,6 @@ void m1_display_source_mqtt_reset(void)
         if(lane.source==M1_DISPLAY_MQTT){mico_rtos_lock_mutex(&m1_lock);memset(&display_cache[i],0,sizeof(display_cache[i]));mico_rtos_unlock_mutex(&m1_lock);}
     }
 }
-static bool display_counter(json_object *o,const char *key,uint32_t *value)
-{
-    json_object *v=display_get(o,key);
-    if(!display_is_type(v,json_type_int))return false;
-    int64_t n=json_object_get_int64(v);
-    if(n<1 || (uint64_t)n>UINT32_MAX)return false;
-    *value=(uint32_t)n;return true;
-}
-static bool display_number(json_object *o,float *value)
-{
-    if(!display_is_type(o,json_type_int)&&!display_is_type(o,json_type_double))return false;
-    double n=json_object_get_double(o);
-    *value=(float)n;return isfinite(n) && isfinite(*value);
-}
-static bool display_text(json_object *o,const char *expected)
-{
-    return display_is_type(o,json_type_string) &&
-        (size_t)json_object_get_string_len(o)==strlen(expected) &&
-        !strcmp(json_object_get_string(o),expected);
-}
 void m1_display_source_offline(const char *model,const char *id)
 {
     (void)model; /* Availability identifies a device; models do not define fields. */
@@ -71,52 +59,44 @@ void m1_display_source_offline(const char *model,const char *id)
         mico_rtos_unlock_mutex(&m1_lock);
     }
 }
-static bool display_descriptor_text(json_object *o,size_t min,size_t max)
+void m1_display_source_metadata(const char *id,const ph_value *body)
 {
-    return display_is_type(o,json_type_string) && sensor_field_text(json_object_get_string(o),
-        (size_t)json_object_get_string_len(o),min,max);
-}
-void m1_display_source_sample(const char *id,json_object *body)
-{
-    uint32_t boot,sequence;
-    json_object *schema=display_get(body,"schema");
-    if(!display_is_type(schema,json_type_int) || json_object_get_int64(schema)!=2 ||
-       !display_text(display_get(body,"device_id"),id) ||
-       !display_counter(body,"boot",&boot) || !display_counter(body,"sequence",&sequence))return;
-    json_object *sensors=display_get(body,"sensors");
-    if(!display_is_type(sensors,json_type_object))return;
-    unsigned count=0;
-    json_object_object_foreach(sensors,key,field_value){
-        (void)field_value;
-        if(++count>SENSOR_FIELD_MAX || !sensor_field_token(key,strlen(key),SENSOR_FIELD_ID_MAX))return;
+    ph_sensor_view view;if(!ph_sensor_view_parse(body,id,true,&view))return;
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
+        m1_display_lane_config_t lane;m1_display_remote_t remote;uint32_t revision;
+        if(!m1_display_lane_get(i,&lane,&remote,&revision)||lane.source!=M1_DISPLAY_MQTT||strcmp(lane.device_id,id))continue;
+        bool valid=ph_sensor_descriptor_matches(&view,remote.field_id,remote.unit);
+        mico_rtos_lock_mutex(&m1_lock);display_cache_t *r=&display_cache[i];
+        bool accept=true;for(unsigned j=0;j<4;j++)if(r->retired_boot[j]==view.boot)accept=false;
+        if(r->revision==revision && r->metadata_boot==view.boot && (int32_t)(view.descriptor_revision-r->descriptor_revision)<0)accept=false;
+        if(accept){
+            if(r->metadata_boot && r->metadata_boot!=view.boot){memmove(r->retired_boot+1,r->retired_boot,3*sizeof(*r->retired_boot));r->retired_boot[0]=r->metadata_boot;}
+            if(r->revision!=revision||r->metadata_boot!=view.boot||r->descriptor_revision!=view.descriptor_revision||!valid)r->valid=false;
+            r->revision=revision;r->metadata_boot=view.boot;r->descriptor_revision=view.descriptor_revision;r->descriptor_valid=valid;
+        }
+        mico_rtos_unlock_mutex(&m1_lock);
     }
+}
+void m1_display_source_sample(const char *id,const ph_value *body)
+{
+    ph_sensor_view view;if(!ph_sensor_view_parse(body,id,false,&view))return;
     uint32_t now=mico_rtos_get_time();
     for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
         m1_display_lane_config_t lane;m1_display_remote_t remote;uint32_t revision;
-        if(!m1_display_lane_get(i,&lane,&remote,&revision))continue;
-        const m1_display_lane_config_t *l=&lane;
-        if(l->source!=M1_DISPLAY_MQTT || strcmp(l->device_id,id))continue;
-        json_object *field=display_get(sensors,remote.field_id),*type=display_get(field,"type");
-        /* Each envelope is a complete snapshot. Missing/unknown fields
-         * revoke old numeric values, without affecting valid siblings. */
-        json_object *ok=display_get(field,"valid"),*age=display_get(field,"age_ms");
-        float value=0;
-        uint32_t lease=(uint32_t)l->ttl_seconds*1000;if(lease>20000)lease=20000;
-        bool valid=display_text(type,"number") &&
-            display_descriptor_text(display_get(field,"name"),1,SENSOR_FIELD_NAME_MAX) &&
-            display_is_type(ok,json_type_boolean) && json_object_get_boolean(ok) &&
-            display_text(display_get(field,"unit"),remote.unit) &&
-            display_is_type(age,json_type_int) && json_object_get_int64(age)>=0 &&
-            json_object_get_int64(age)<lease && display_number(display_get(field,"value"),&value);
-        mico_rtos_lock_mutex(&m1_lock);
-        display_cache_t *r=&display_cache[i];
-        bool accept=!(r->revision==revision && r->boot==boot && (int32_t)(sequence-r->sequence)<=0);
-        for(unsigned j=0;j<4;j++)if(r->retired_boot[j]==boot)accept=false;
+        if(!m1_display_lane_get(i,&lane,&remote,&revision)||lane.source!=M1_DISPLAY_MQTT||strcmp(lane.device_id,id))continue;
+        uint32_t lease=(uint32_t)lane.ttl_seconds*1000;if(lease>20000)lease=20000;
+        float value=0;uint32_t age=0;bool valid=ph_sensor_reading(&view,remote.field_id,lease,&value,&age);
+        mico_rtos_lock_mutex(&m1_lock);display_cache_t *r=&display_cache[i];
+        bool accept=!(r->revision==revision && r->boot==view.boot && (int32_t)(view.sequence-r->sequence)<=0);
+        for(unsigned j=0;j<4;j++)if(r->retired_boot[j]==view.boot)accept=false;
         if(accept){
-            if(r->boot && r->boot!=boot){memmove(r->retired_boot+1,r->retired_boot,3*sizeof(*r->retired_boot));r->retired_boot[0]=r->boot;}
-            r->revision=revision;r->boot=boot;r->sequence=sequence;r->received_ms=now;
-            r->valid=valid;r->value=value;r->age_ms=valid?(uint32_t)json_object_get_int64(age):0;
-            r->received=true;r->lease_ms=lease;r->color_override=false;r->offline=false;
+            bool matches=r->revision==revision&&r->metadata_boot==view.boot&&r->descriptor_revision==view.descriptor_revision&&r->descriptor_valid;
+            /* Unknown descriptors revoke, but never renew the previous lease. */
+            if(!matches)r->valid=false;
+            else{
+                r->revision=revision;r->boot=view.boot;r->sequence=view.sequence;r->received_ms=now;
+                r->valid=valid;r->value=value;r->age_ms=valid?age:0;r->received=true;r->lease_ms=lease;r->color_override=false;r->offline=false;
+            }
         }
         mico_rtos_unlock_mutex(&m1_lock);
     }
@@ -226,172 +206,66 @@ static const char *const source_names[]={"local","mqtt","api","none"};
 static const char *const color_names[]={"off","red","green","yellow"};
 static const char *const reason_names[]={"ok","disabled","missing","stale","offline","invalid","out_of_range","unsupported"};
 static const char *const mode_names[]={"integer","auto_kilo","decimal_2","decimal_1","milli"};
-static bool display_keys(json_object *o,const char *const *keys,unsigned count)
-{
-    if(!display_is_type(o,json_type_object))return false;
-    json_object_object_foreach(o,key,value){
-        (void)value;bool found=false;
-        for(unsigned i=0;i<count;i++)if(!strcmp(key,keys[i]))found=true;
-        if(!found)return false;
-    }
-    return true;
-}
-static bool display_int(json_object *o,const char *key,int low,int high,unsigned *out)
-{
-    json_object *v=display_get(o,key);
-    if(!display_is_type(v,json_type_int))return false;
-    int64_t n=json_object_get_int64(v);
-    if(n<low || n>high)return false;*out=(unsigned)n;return true;
-}
-static int display_enum(json_object *o,const char *const *names,unsigned count)
-{
-    for(unsigned i=0;i<count;i++)if(display_text(o,names[i]))return (int)i;
-    return -1;
-}
-static bool display_float(json_object *o,float *out)
-{
-    if(!display_is_type(o,json_type_int)&&!display_is_type(o,json_type_double))return false;
-    double n=json_object_get_double(o);*out=(float)n;return isfinite(n)&&isfinite(*out);
-}
-static void display_string(json_object *o,const char *key,const char *value)
-{json_build_object_add(o,key,json_object_new_string(value));}
-/* Like json_owned.c, use the pinned MiCO layout for binary32 round trips. */
-static int display_float32_encode(json_object *o,struct printbuf *pb)
-{
-    char number[32];
-    int n=json_number_format_float32(number,sizeof(number),(float)json_object_get_double(o));
-    if(n<0){pb->failed=1;return -1;}
-    return printbuf_memappend(pb,number,n);
-}
-static json_object *display_float32_json(float value)
-{
-    json_object *o=json_object_new_double(value);
-    if(o)o->_to_json_string=display_float32_encode;
-    return o;
-}
-static json_object *display_color_json(const m1_display_lane_config_t *l)
-{
-    json_object *o=json_object_new_object();
-    display_string(o,"mode",l->color_mode==M1_DISPLAY_COLOR_THRESHOLDS?"thresholds":"fixed");
-    if(l->color_mode==M1_DISPLAY_COLOR_THRESHOLDS){
-        json_build_object_add(o,"low",display_float32_json(l->low));
-        json_build_object_add(o,"high",display_float32_json(l->high));
-    }else display_string(o,"value",color_names[l->color]);
-    return o;
-}
-static json_object *display_lamps_json(unsigned lamps)
-{
-    json_object *array=json_object_new_array();
-    for(unsigned position=0;position<3;position++){
-        json_object *o=json_object_new_object();
-        json_build_object_add(o,"red",json_object_new_boolean((lamps>>position)&1u));
-        json_build_object_add(o,"green",json_object_new_boolean((lamps>>(position+3))&1u));
-        json_build_object_add(o,"yellow",json_object_new_boolean((lamps>>(position+6))&1u));
-        json_build_array_add(array,o);
-    }
-    return array;
-}
-static bool display_lamps_parse(json_object *array,uint16_t *out)
+static void display_lamps_write(ph_writer *w,const char *key,unsigned lamps)
+{phw_begin(w,key,true);for(unsigned position=0;position<3;position++){phw_begin(w,NULL,false);phw_bool(w,"red",(lamps>>position)&1u);phw_bool(w,"green",(lamps>>(position+3))&1u);phw_bool(w,"yellow",(lamps>>(position+6))&1u);phw_end(w);}phw_end(w);}
+static bool display_lamps_parse(ph_value array,uint16_t *out)
 {
     static const char *const keys[]={"red","green","yellow"};
-    if(!display_is_type(array,json_type_array) || json_object_array_length(array)!=3)return false;
+    if(array.kind!=PHV_ARRAY || array.count!=3)return false;
     unsigned lamps=0;
     for(unsigned position=0;position<3;position++){
-        json_object *o=json_object_array_get_idx(array,position);
+        ph_value o=display_at(array,position);
         if(!display_keys(o,keys,3))return false;
         for(unsigned color=0;color<3;color++){
-            json_object *v=display_get(o,keys[color]);
-            if(!display_is_type(v,json_type_boolean))return false;
-            if(json_object_get_boolean(v))lamps|=1u<<(position+3*color);
+            ph_value v=display_get(o,keys[color]);
+            if((v.kind!=PHV_TRUE&&v.kind!=PHV_FALSE))return false;
+            if(v.kind==PHV_TRUE)lamps|=1u<<(position+3*color);
         }
     }
     *out=(uint16_t)lamps;return true;
 }
-json_object *m1_display_profile_json(void)
+void m1_display_profile_write(ph_writer *w)
 {
     m1_display_config_t c;m1_display_config_get(&c);
     bool active_formatted=c.reserved==M1_DISPLAY_FORMATTED,configured=c.configured;
-    if(!active_formatted){
-        /* A read-only view of old settings does not activate new UART ops. */
-        for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
-            c.style[i]=m1_display_project_style(&c.lanes[i],i);
-            c.lanes[i].scale=1;c.lanes[i].decimals=0;c.lanes[i].color=0;
-        }
-        c.reserved=M1_DISPLAY_FORMATTED;
-    }
-    m1_display_readback_t readback[M1_DISPLAY_LANES];bool selected;
-    m1_display_readback(readback,&selected);
-    mico_rtos_lock_mutex(&m1_lock);
-    bool supported=m1_state.mcu_version_received && m1_state.mcu_extended && m1_state.mcu_display_format_schema==3;
-    mico_rtos_unlock_mutex(&m1_lock);
-    json_object *o=json_object_new_object(),*lanes=json_object_new_array(),*runtime=json_object_new_object(),*values=json_object_new_array();
-    json_build_object_add(o,"schema",json_object_new_int(4));
-    json_build_object_add(o,"revision",json_object_new_int(c.revision));
-    display_string(o,"selected_source",c.selected?"user":"original");
-    display_string(o,"double_click",c.double_click?"switch_display":"none");
-    bool matching_profile=active_formatted && configured;
-    bool confirmed=supported && matching_profile;
+    if(!active_formatted){for(unsigned i=0;i<M1_DISPLAY_LANES;i++){c.style[i]=m1_display_project_style(&c.lanes[i],i);c.lanes[i].scale=1;c.lanes[i].decimals=0;c.lanes[i].color=0;}c.reserved=M1_DISPLAY_FORMATTED;}
+    m1_display_readback_t readback[M1_DISPLAY_LANES];bool selected;m1_display_readback(readback,&selected);
+    mico_rtos_lock_mutex(&m1_lock);bool supported=m1_state.mcu_version_received&&m1_state.mcu_extended&&m1_state.mcu_display_format_schema==3;mico_rtos_unlock_mutex(&m1_lock);
+    bool matching_profile=active_formatted&&configured,confirmed=supported&&matching_profile;
+    m1_display_value_t values[M1_DISPLAY_LANES];bool lane_confirmed[M1_DISPLAY_LANES];
+    phw_begin(w,NULL,false);phw_u32(w,"schema",4);phw_u32(w,"revision",c.revision);
+    phw_text(w,"selected_source",c.selected?"user":"original");phw_text(w,"double_click",c.double_click?"switch_display":"none");
+    phw_begin(w,"lanes",true);
     for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
-        const m1_display_lane_config_t *l=&c.lanes[i];
-        const char *unit=l->source==M1_DISPLAY_MQTT?c.remote[i].unit:unit_names[l->unit];
-        json_object *lane=json_object_new_object();
-        json_build_object_add(lane,"slot",json_object_new_int(i));
-        display_string(lane,"source",source_names[l->source]);display_string(lane,"device_id",l->device_id);
-        if(l->source==M1_DISPLAY_MQTT){
-            display_string(lane,"field_id",c.remote[i].field_id);display_string(lane,"type","number");
-        }else display_string(lane,"metric",metric_names[l->metric]);
-        display_string(lane,"unit",unit);
-        json_object *display=json_object_new_object();
-        display_string(display,"mode",mode_names[c.style[i].mode]);
-        json_build_object_add(display,"show_label",json_object_new_boolean(c.style[i].show_label));
-        json_build_object_add(display,"show_unit",json_object_new_boolean(c.style[i].show_unit));
-        json_build_object_add(lane,"display",display);
-        json_build_object_add(lane,"ttl_seconds",json_object_new_int(l->ttl_seconds));
-        json_object *color=display_color_json(l);
-        if(l->color_mode==M1_DISPLAY_COLOR_FIXED){
-            json_object_object_del(color,"value");json_build_object_add(color,"lamps",display_lamps_json(c.style[i].lamps));
-        }
-        json_build_object_add(lane,"color",color);json_build_array_add(lanes,lane);
-        m1_display_value_t value;m1_display_source_value(&c,i,&value);
-        bool lane_confirmed=matching_profile && readback[i].confirmed && (value.valid?
-            readback[i].ttl && readback[i].number==value.number && readback[i].format==value.format && readback[i].lamps==value.lamps:
-            !readback[i].ttl);
-        json_object *v=json_object_new_object();
-        json_build_object_add(v,"slot",json_object_new_int(i));
-        json_build_object_add(v,"valid",json_object_new_boolean(value.valid));
-        if(value.valid)json_build_object_add(v,"value",display_float32_json(value.value));else json_object_object_add(v,"value",NULL);
-        display_string(v,"unit",value.direct?unit_names[value.unit]:unit);
-        if(value.age_known)json_build_object_add(v,"age_ms",json_object_new_int64(value.age_ms));else json_object_object_add(v,"age_ms",NULL);
-        json_build_object_add(v,"remaining_ttl_seconds",json_object_new_int(value.valid?value.ttl:0));
-        json_build_object_add(v,"effective",json_object_new_boolean(supported && lane_confirmed && readback[i].showing));
-        display_string(v,"reason",reason_names[value.reason]);
-        if(value.valid){
-            json_build_object_add(v,"number",json_object_new_int(value.number));json_build_object_add(v,"format",json_object_new_int(value.format));
-            json_build_object_add(v,"lamps",display_lamps_json(value.lamps));
-        }else{
-            json_object_object_add(v,"number",NULL);json_object_object_add(v,"format",NULL);json_object_object_add(v,"lamps",NULL);
-        }
-        json_build_object_add(v,"confirmed",json_object_new_boolean(lane_confirmed));
-        confirmed=confirmed && lane_confirmed;json_build_array_add(values,v);
-    }
-    json_build_object_add(o,"lanes",lanes);
-    display_string(runtime,"profile",configured?(active_formatted?"formatted":"dual"):"legacy");
-    display_string(runtime,"selected_source",selected?"user":"original");
-    json_build_object_add(runtime,"mcu_supported",json_object_new_boolean(supported));
-    json_build_object_add(runtime,"confirmed",json_object_new_boolean(confirmed));
-    display_string(runtime,"confirmation",!supported?"requires_mcu_upgrade":confirmed?"mcu_readback":"pending_mcu_readback");
-    json_build_object_add(runtime,"lanes",values);json_build_object_add(o,"runtime",runtime);return o;
+        const m1_display_lane_config_t *l=&c.lanes[i];const char *unit=l->source==M1_DISPLAY_MQTT?c.remote[i].unit:unit_names[l->unit];
+        phw_begin(w,NULL,false);phw_u32(w,"slot",i);phw_text(w,"source",source_names[l->source]);phw_text(w,"device_id",l->device_id);
+        if(l->source==M1_DISPLAY_MQTT){phw_text(w,"field_id",c.remote[i].field_id);phw_text(w,"type","number");}else phw_text(w,"metric",metric_names[l->metric]);
+        phw_text(w,"unit",unit);phw_begin(w,"display",false);phw_text(w,"mode",mode_names[c.style[i].mode]);phw_bool(w,"show_label",c.style[i].show_label);phw_bool(w,"show_unit",c.style[i].show_unit);phw_end(w);
+        phw_u32(w,"ttl_seconds",l->ttl_seconds);phw_begin(w,"color",false);phw_text(w,"mode",l->color_mode==M1_DISPLAY_COLOR_THRESHOLDS?"thresholds":"fixed");
+        if(l->color_mode==M1_DISPLAY_COLOR_THRESHOLDS){phw_number(w,"low",l->low);phw_number(w,"high",l->high);}else display_lamps_write(w,"lamps",c.style[i].lamps);
+        phw_end(w);phw_end(w);
+        m1_display_source_value(&c,i,&values[i]);const m1_display_value_t *v=&values[i];
+        lane_confirmed[i]=matching_profile&&readback[i].confirmed&&(v->valid?readback[i].ttl&&readback[i].number==v->number&&readback[i].format==v->format&&readback[i].lamps==v->lamps:!readback[i].ttl);
+        confirmed=confirmed&&lane_confirmed[i];
+    }phw_end(w);
+    phw_begin(w,"runtime",false);phw_text(w,"profile",configured?(active_formatted?"formatted":"dual"):"legacy");phw_text(w,"selected_source",selected?"user":"original");phw_bool(w,"mcu_supported",supported);phw_bool(w,"confirmed",confirmed);phw_text(w,"confirmation",!supported?"requires_mcu_upgrade":confirmed?"mcu_readback":"pending_mcu_readback");
+    phw_begin(w,"lanes",true);
+    for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
+        const m1_display_value_t *v=&values[i];const m1_display_lane_config_t *l=&c.lanes[i];const char *unit=l->source==M1_DISPLAY_MQTT?c.remote[i].unit:unit_names[l->unit];
+        phw_begin(w,NULL,false);phw_u32(w,"slot",i);phw_bool(w,"valid",v->valid);if(v->valid)phw_number(w,"value",v->value);else phw_null(w,"value");phw_text(w,"unit",v->direct?unit_names[v->unit]:unit);
+        if(v->age_known)phw_u32(w,"age_ms",v->age_ms);else phw_null(w,"age_ms");phw_u32(w,"remaining_ttl_seconds",v->valid?v->ttl:0);phw_bool(w,"effective",supported&&lane_confirmed[i]&&readback[i].showing);phw_text(w,"reason",reason_names[v->reason]);
+        if(v->valid){phw_u32(w,"number",v->number);phw_u32(w,"format",v->format);display_lamps_write(w,"lamps",v->lamps);}else{phw_null(w,"number");phw_null(w,"format");phw_null(w,"lamps");}
+        phw_bool(w,"confirmed",lane_confirmed[i]);phw_end(w);
+    }phw_end(w);phw_end(w);phw_end(w);
 }
-/* The pre-release action names are aliases of the current contract. */
-json_object *m1_display_source_json(void){return m1_display_profile_json();}
-static bool display_binding_string(json_object *o,char *out,bool field)
+static bool display_binding_string(ph_value o,char *out,bool field)
 {
-    if(!display_is_type(o,json_type_string))return false;
-    const char *text=json_object_get_string(o);size_t n=(size_t)json_object_get_string_len(o);
+    if(o.kind!=PHV_TEXT)return false;
+    const char *text=(const char *)o.text;size_t n=o.size;
     if(field?!sensor_field_token(text,n,SENSOR_FIELD_ID_MAX):!sensor_field_text(text,n,0,SENSOR_FIELD_UNIT_MAX))return false;
     memcpy(out,text,n);out[n]=0;return true;
 }
-static bool display_lane_parse(json_object *o,unsigned slot,m1_display_lane_config_t *l,
+static bool display_lane_parse(ph_value o,unsigned slot,m1_display_lane_config_t *l,
                                m1_display_style_t *style,m1_display_remote_t *remote)
 {
     static const char *const local_keys[]={"slot","source","device_id","metric","unit","display","ttl_seconds","color"};
@@ -399,28 +273,27 @@ static bool display_lane_parse(json_object *o,unsigned slot,m1_display_lane_conf
     unsigned n;int source=display_enum(display_get(o,"source"),source_names,4);
     if(source<0 || !display_keys(o,source==M1_DISPLAY_MQTT?mqtt_keys:local_keys,source==M1_DISPLAY_MQTT?9:8) ||
        !display_int(o,"slot",slot,slot,&n))return false;
-    json_object *id=display_get(o,"device_id");
-    if(!display_is_type(id,json_type_string) || json_object_get_string_len(id)>17 ||
-       (size_t)json_object_get_string_len(id)!=strlen(json_object_get_string(id)))return false;
+    ph_value id=display_get(o,"device_id");char device_id[18];
+    if(id.kind!=PHV_TEXT || id.size>17)return false;
     *l=(m1_display_lane_config_t){.source=source,.metric=M1_DISPLAY_CUSTOM,.unit=M1_DISPLAY_UNITLESS,.scale=1};
     if(source==M1_DISPLAY_MQTT){
-        if(!m1_display_device_id(json_object_get_string(id),l->device_id) || !display_text(display_get(o,"type"),"number") ||
+        if(!phv_text(&id,device_id,sizeof(device_id)) || !m1_display_device_id(device_id,l->device_id) || !display_text(display_get(o,"type"),"number") ||
            !display_binding_string(display_get(o,"field_id"),remote->field_id,true) ||
            !display_binding_string(display_get(o,"unit"),remote->unit,false))return false;
     }else{
         int metric=display_enum(display_get(o,"metric"),metric_names,M1_DISPLAY_METRIC_COUNT);
         int unit=display_enum(display_get(o,"unit"),unit_names,M1_DISPLAY_UNIT_COUNT);
-        if(json_object_get_string_len(id) || metric<0 || unit<0)return false;
+        if(id.size || metric<0 || unit<0)return false;
         l->metric=metric;l->unit=unit;
     }
     static const char *const display_fields[]={"mode","show_label","show_unit"};
-    json_object *display=display_get(o,"display"),*label=display_get(display,"show_label"),*unit_flag=display_get(display,"show_unit");
+    ph_value display=display_get(o,"display"),label=display_get(display,"show_label"),unit_flag=display_get(display,"show_unit");
     int mode=display_enum(display_get(display,"mode"),mode_names,M1_DISPLAY_MODE_COUNT);
     if(!display_keys(display,display_fields,3) || mode<0 || (slot==1 && mode!=M1_DISPLAY_INTEGER) ||
-       !display_is_type(label,json_type_boolean) || !display_is_type(unit_flag,json_type_boolean))return false;
-    *style=(m1_display_style_t){.mode=mode,.show_label=json_object_get_boolean(label),.show_unit=json_object_get_boolean(unit_flag)};
+       (label.kind!=PHV_TRUE&&label.kind!=PHV_FALSE) || (unit_flag.kind!=PHV_TRUE&&unit_flag.kind!=PHV_FALSE))return false;
+    *style=(m1_display_style_t){.mode=mode,.show_label=label.kind==PHV_TRUE,.show_unit=unit_flag.kind==PHV_TRUE};
     if(!display_int(o,"ttl_seconds",1,60,&n))return false;l->ttl_seconds=n;
-    json_object *color=display_get(o,"color");
+    ph_value color=display_get(o,"color");
     if(display_text(display_get(color,"mode"),"fixed")){
         static const char *const fixed_keys[]={"mode","lamps"};
         if(!display_keys(color,fixed_keys,2) || !display_lamps_parse(display_get(color,"lamps"),&style->lamps))return false;
@@ -432,66 +305,77 @@ static bool display_lane_parse(json_object *o,unsigned slot,m1_display_lane_conf
     }else return false;
     return true;
 }
-json_object *m1_display_profile_set(json_object *p,const char **code)
+static bool display_profile_set(ph_value p,const char **code)
 {
     static const char *const keys[]={"revision","selected_source","double_click","lanes"};
     static const char *const selected[]={"original","user"},*const button[]={"none","switch_display"};
     *code="invalid_params";unsigned revision;
-    if(!display_keys(p,keys,4) || !display_int(p,"revision",0,INT32_MAX,&revision))return NULL;
+    if(!display_keys(p,keys,4) || !display_int(p,"revision",0,INT32_MAX,&revision))return false;
     int choice=display_enum(display_get(p,"selected_source"),selected,2);
     int action=display_enum(display_get(p,"double_click"),button,2);
-    json_object *lanes=display_get(p,"lanes");
-    if(choice<0 || action<0 || !display_is_type(lanes,json_type_array) || json_object_array_length(lanes)!=M1_DISPLAY_LANES)return NULL;
+    ph_value lanes=display_get(p,"lanes");
+    if(choice<0 || action<0 || lanes.kind!=PHV_ARRAY || lanes.count!=M1_DISPLAY_LANES)return false;
     m1_display_config_t c={.magic=M1_DISPLAY_MAGIC,.revision=revision,.configured=1,.selected=choice,.double_click=action,.reserved=M1_DISPLAY_FORMATTED};
     bool used[M1_DISPLAY_LANES]={false};
     for(unsigned i=0;i<M1_DISPLAY_LANES;i++){
-        json_object *lane=json_object_array_get_idx(lanes,i);unsigned slot;
+        ph_value lane=display_at(lanes,i);unsigned slot;
         if(!display_int(lane,"slot",0,M1_DISPLAY_LANES-1,&slot) || used[slot] ||
-           !display_lane_parse(lane,slot,&c.lanes[slot],&c.style[slot],&c.remote[slot]))return NULL;
+           !display_lane_parse(lane,slot,&c.lanes[slot],&c.style[slot],&c.remote[slot]))return false;
         used[slot]=true;
     }
-    *code=m1_display_config_save(&c);return !strcmp(*code,"accepted")?m1_display_profile_json():NULL;
+    *code=m1_display_config_save(&c);return !strcmp(*code,"accepted");
 }
-json_object *m1_display_source_set(json_object *p,const char **code){return m1_display_profile_set(p,code);}
-json_object *m1_display_data_set(json_object *p,const char **code)
+
+static bool display_data_set(ph_value p,const char **code)
 {
     static const char *const keys[]={"revision","slot","value","unit","ttl_seconds","color"};
     *code="invalid_params";unsigned revision,slot,ttl;
     if(!display_keys(p,keys,6) || !display_int(p,"revision",0,INT32_MAX,&revision) ||
-       !display_int(p,"slot",0,M1_DISPLAY_LANES-1,&slot) || !display_int(p,"ttl_seconds",0,60,&ttl))return NULL;
+       !display_int(p,"slot",0,M1_DISPLAY_LANES-1,&slot) || !display_int(p,"ttl_seconds",0,60,&ttl))return false;
     float value=0;int unit=0,color=-1;
     if(!ttl){
         static const char *const clear_keys[]={"revision","slot","ttl_seconds"};
-        if(!display_keys(p,clear_keys,3))return NULL;
+        if(!display_keys(p,clear_keys,3))return false;
         m1_display_lane_config_t lane;uint32_t current;m1_display_lane_get(slot,&lane,NULL,&current);unit=lane.unit;
     }else{
         unit=display_enum(display_get(p,"unit"),unit_names,M1_DISPLAY_UNIT_COUNT);
-        if(unit<0 || !display_number(display_get(p,"value"),&value))return NULL;
-        json_object *v=display_get(p,"color");
-        if(v){color=display_enum(v,color_names,4);if(color<0)return NULL;}
+        if(unit<0 || !display_number(display_get(p,"value"),&value))return false;
+        ph_value v=display_get(p,"color");
+        if(phv_exists(&v)){color=display_enum(v,color_names,4);if(color<0)return false;}
     }
     *code=m1_display_data_save(slot,revision,value,unit,ttl,color);
-    return !strcmp(*code,"accepted")?m1_display_source_json():NULL;
+    return !strcmp(*code,"accepted");
 }
-json_object *m1_display_value_set(json_object *p,const char **code)
+static bool display_value_set(ph_value p,const char **code)
 {
     static const char *const keys[]={"revision","slot","number","decimal","show_label","show_unit","ttl_seconds","lamps"};
     static const char *const clear_keys[]={"revision","slot","ttl_seconds"};
     *code="invalid_params";unsigned revision,slot,ttl,number=0,format=0;uint16_t lamps=0;
     if(!display_keys(p,keys,8) || !display_int(p,"revision",0,INT32_MAX,&revision) ||
-       !display_int(p,"slot",0,M1_DISPLAY_LANES-1,&slot) || !display_int(p,"ttl_seconds",0,60,&ttl))return NULL;
+       !display_int(p,"slot",0,M1_DISPLAY_LANES-1,&slot) || !display_int(p,"ttl_seconds",0,60,&ttl))return false;
     if(!ttl){
-        if(!display_keys(p,clear_keys,3))return NULL;
+        if(!display_keys(p,clear_keys,3))return false;
     }else{
         static const char *const flags[]={"decimal","show_label","show_unit"};
-        if(!display_int(p,"number",0,999,&number) || !display_lamps_parse(display_get(p,"lamps"),&lamps))return NULL;
+        if(!display_int(p,"number",0,999,&number) || !display_lamps_parse(display_get(p,"lamps"),&lamps))return false;
         for(unsigned i=0;i<3;i++){
-            json_object *v=display_get(p,flags[i]);
-            if(!display_is_type(v,json_type_boolean))return NULL;
-            if(json_object_get_boolean(v))format|=1u<<i;
+            ph_value v=display_get(p,flags[i]);
+            if((v.kind!=PHV_TRUE&&v.kind!=PHV_FALSE))return false;
+            if(v.kind==PHV_TRUE)format|=1u<<i;
         }
-        if(slot==1 && (format&1u))return NULL;
+        if(slot==1 && (format&1u))return false;
     }
     *code=m1_display_frame_save(slot,revision,number,format,lamps,ttl);
-    return !strcmp(*code,"accepted")?m1_display_profile_json():NULL;
+    return !strcmp(*code,"accepted");
+}
+
+bool m1_display_mp(const char *action,const ph_value *p,ph_writer *w,const char **code)
+{
+    bool accepted=true;
+    if(!strcmp(action,"display_profile.get")||!strcmp(action,"display_source.get")){*code=phv_keys(p,"")?"ok":"invalid_params";accepted=!strcmp(*code,"ok");}
+    else if(!strcmp(action,"display_profile.set")||!strcmp(action,"display_source.set"))accepted=display_profile_set(*p,code);
+    else if(!strcmp(action,"display_data.set"))accepted=display_data_set(*p,code);
+    else if(!strcmp(action,"display_value.set"))accepted=display_value_set(*p,code);
+    else return false;
+    if(accepted)m1_display_profile_write(w);return true;
 }

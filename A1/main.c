@@ -2,6 +2,7 @@
 #include "../common/automation.h"
 
 #include "../common/backup.h"
+#include "../common/device_hostname_mico.h"
 static bool config_recovery, config_commit_uncertain, config_initializing, config_update_pending;
 bool device_config_recovery(void) { return config_recovery || config_commit_uncertain; }
 void device_config_recovery_set(bool recovery) { config_recovery=recovery || config_commit_uncertain; }
@@ -22,6 +23,13 @@ a1_config_t *a1_config;
 char a1_id[13];
 a1_state_t a1_state;
 mico_Context_t *a1_context;
+#define AUTH_DEVICE_ID a1_id
+#define AUTH_CONFIG_LOCK a1_config_lock
+#define AUTH_STORE (((app_storage_t *)a1_config)->local_auth)
+#define AUTH_PASSWORD (a1_config->web_password)
+#define AUTH_CONTEXT a1_context
+#include "../common/local_auth_mico.inc"
+
 static uint32_t save_at;
 static a1_filter_clock_t filter_clock;
 static a1_filter_stock_clock_t stock_clock;
@@ -82,6 +90,7 @@ void appRestoreDefault_callback(void *data, uint32_t size)
     if (size >= sizeof(app_storage_t)) a1_filter_defaults(&((app_storage_t *)data)->filter);
     if(size>=sizeof(app_storage_t))memset(&((app_storage_t *)data)->bemfa,0,sizeof(bemfa_config_t));
     if (size >= sizeof(app_storage_t)) a1_filter_stock_defaults(&((app_storage_t *)data)->filter_stock, true);
+    if(size>=sizeof(app_storage_t))ph_auth_store_empty(&((app_storage_t *)data)->local_auth);
     c->magic = A1_CONFIG_MAGIC; c->version = A1_CONFIG_VERSION;
     c->mqtt_port = 1883; c->mqtt_topic_mode = MQTT_TOPIC_TMCP; c->speed = 60;
     c->led_enabled = 1; c->brightness = 255; c->blue = 255;
@@ -94,8 +103,9 @@ void a1_config_get(a1_config_t *out)
     mico_rtos_unlock_mutex(&a1_config_lock);
 }
 
-bool a1_reset(bool full)
+static bool a1_reset_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    bool full=*(bool *)opaque;
     app_storage_t *old = malloc(sizeof(*old));
     if (!old) return false;
     mico_rtos_lock_mutex(&a1_config_lock);
@@ -110,6 +120,7 @@ bool a1_reset(bool full)
         if(full)config_recovery=false;
         if (full) appRestoreDefault_callback(a1_config, sizeof(*old));
         else { a1_config->ssid[0] = 0; a1_config->wifi_password[0] = 0; a1_config->web_password[0] = 0; }
+        AUTH_STORE=*auth_store;
         ok = mico_system_context_update(a1_context) == kNoErr;
         if (!ok) { memcpy(a1_config, old, sizeof(*old)); config_recovery=was_recovery || config_commit_uncertain; }
         else {
@@ -124,6 +135,13 @@ bool a1_reset(bool full)
     mico_rtos_unlock_mutex(&a1_config_lock);
     free(old);
     return ok;
+}
+
+bool a1_reset(bool full)
+{
+    const ph_auth_store *empty=ph_auth_store_empty_value();
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),"",true,a1_reset_commit,&full):
+        a1_reset_commit(&full,empty);
 }
 
 void a1_state_get(a1_state_t *out)
@@ -167,28 +185,38 @@ uint8_t device_language_get(void)
     return language == PH_LANG_EN ? PH_LANG_EN : PH_LANG_ZH;
 }
 
-static bool a1_config_save_language(const a1_config_t *c, int language)
+typedef struct {const a1_config_t *config;int language;} a1_config_commit_args;
+static bool a1_config_commit(void *opaque,const ph_auth_store *auth_store)
 {
+    a1_config_commit_args *args=opaque;const a1_config_t *c=args->config;int language=args->language;
     mico_rtos_lock_mutex(&a1_config_lock);
     mico_rtos_lock_mutex(&a1_lock);
     bool reset = a1_config->magic != A1_CONFIG_MAGIC || a1_config->version != A1_CONFIG_VERSION;
-    bool valid = !a1_state.ota_active && !a1_state.reboot_pending &&
+    bool valid = !device_config_recovery() && !a1_state.ota_active && !a1_state.reboot_pending &&
         c->magic == A1_CONFIG_MAGIC && c->version == A1_CONFIG_VERSION &&
         (reset || c->revision == a1_config->revision);
     mico_rtos_unlock_mutex(&a1_lock);
     if (!valid) { mico_rtos_unlock_mutex(&a1_config_lock); return false; }
     a1_config_t old = *a1_config;
+    const ph_auth_store *auth_before=device_local_auth()?&device_local_auth()->store:NULL;AUTH_STORE=*auth_store;
     uint8_t *stored_language = &((app_storage_t *)a1_config)->features.language;
     uint8_t old_language = *stored_language;
     if (language >= 0) *stored_language = language;
     *a1_config = *c; a1_config->revision = old.revision + 1;
     bool ok = flush_locked();
-    if (!ok) { *a1_config = old; *stored_language = old_language; }
+    if (!ok) { if(auth_before)AUTH_STORE=*auth_before; *a1_config = old; *stored_language = old_language; }
     else {
         mico_rtos_lock_mutex(&a1_lock); a1_state.config_generation++; mico_rtos_unlock_mutex(&a1_lock);
     }
     mico_rtos_unlock_mutex(&a1_config_lock);
     return ok;
+}
+
+static bool a1_config_save_language(const a1_config_t *c,int language)
+{
+    a1_config_commit_args args={c,language};
+    return device_local_auth()?ph_auth_credential_commit(device_local_auth(),c->web_password,false,a1_config_commit,&args):
+        a1_config_commit(&args,&AUTH_STORE);
 }
 
 bool a1_config_save(const a1_config_t *c) { return a1_config_save_language(c, -1); }
@@ -414,14 +442,16 @@ int application_start(void)
     if (err != kNoErr) return err;
     uint8_t mac[6]; mico_wlan_get_mac_address(mac);
     snprintf(a1_id, sizeof(a1_id), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    if(!ph_device_hostname_mico("a1",a1_id))return kNotPreparedErr;
     bemfa_config_t *b=&((app_storage_t *)a1_config)->bemfa;
     if(b->magic!=BEMFA_MAGIC || b->version!=1) {
         bemfa_defaults(b,"a1",a1_id);
         migration_changed = true;
     }
     a1_config_get(&c);
-    if (!c.name[0]) {
-        snprintf(c.name, sizeof(c.name), "A1-%02X%02X", mac[4], mac[5]);
+    char previous_name[16];snprintf(previous_name,sizeof(previous_name),"A1-%02X%02X",mac[4],mac[5]);
+    if (!c.name[0] || !strcmp(c.name,previous_name)) {
+        strcpy(c.name, "A1");
         *a1_config = c; migration_changed = true;
     }
     config_initializing = false;
@@ -431,7 +461,7 @@ int application_start(void)
         appRestoreDefault_callback(a1_config, sizeof(app_storage_t));
         fresh_defaults(&((app_storage_t *)a1_config)->fresh_air);
         bemfa_defaults(&((app_storage_t *)a1_config)->bemfa, "a1", a1_id);
-        snprintf(a1_config->name, sizeof(a1_config->name), "A1-%02X%02X", mac[4], mac[5]);
+        strcpy(a1_config->name, "A1");
         filter_clock = (a1_filter_clock_t){0};
         service_event("error", "config", "migration_failed");
     }
@@ -443,6 +473,7 @@ int application_start(void)
         if (*p >= 'a' && *p <= 'f') *p -= 'a' - 'A';
     strcpy(a1_state.ota_state, "idle");
     a1_state.led_until = mico_rtos_get_time() + 2000;
+    if(!device_local_auth_init())return kNoMemoryErr;
     err = startup_result("features", feature_start()); if (err != kNoErr) return err;
     err = startup_result("HTTP", a1_http_start()); if (err != kNoErr) return err;
     /* Keep provisioning available when peripheral initialization fails. */
@@ -586,13 +617,24 @@ void a1_status_capture(device_status_t *snapshot, device_status_full_t *full)
     snapshot->now_ms=mico_rtos_get_time(); /* after copying all timestamped state */
     if(full) {
         snapshot->captured|=STATUS_DIAGNOSTIC;
-        runtime_metrics_capture(&full->runtime,snapshot->now_ms);
-        watchdog_status_capture(&full->watchdog); full->http=ph_http_snapshot();
         a1_filter_get(&full->model.a1.filter);
         a1_filter_stock_get(&full->model.a1.filter_stock);
     }
 }
 
+void a1_diagnostics_capture(device_status_t *snapshot,device_status_full_t *full)
+{
+    a1_status_capture(snapshot,full);
+    runtime_metrics_capture(&full->runtime,snapshot->now_ms);
+    watchdog_status_capture(&full->watchdog);full->http=ph_http_snapshot();
+}
+
+void bemfa_config_flags_get(bool *mqtt_enabled,bool *enabled) {
+    mico_rtos_lock_mutex(&a1_config_lock);
+    const bemfa_config_t *config=&((app_storage_t *)a1_config)->bemfa;
+    *mqtt_enabled=config->mqtt_enabled!=0;*enabled=config->enabled!=0;
+    mico_rtos_unlock_mutex(&a1_config_lock);
+}
 void bemfa_config_get(bemfa_config_t *out) {
     mico_rtos_lock_mutex(&a1_config_lock);*out=((app_storage_t *)a1_config)->bemfa;mico_rtos_unlock_mutex(&a1_config_lock);
 }

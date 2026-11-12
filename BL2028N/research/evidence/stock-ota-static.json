@@ -1,0 +1,93 @@
+{
+  "status": "STATIC_FACTS_VERIFIED",
+  "input_bytes": 1079392,
+  "input_sha256": "6cd7246861ea44f277f25bc61b2f236cec7c5f4db3c487cdb177c8bbc9c9e723",
+  "logical_base": "0x10000",
+  "direct_calls": [
+    {
+      "label": "andlink_url_to_ota",
+      "site": "0x15664",
+      "target": "0x19c14"
+    },
+    {
+      "label": "orvibo_url_to_ota",
+      "site": "0x18e0e",
+      "target": "0x19c14"
+    },
+    {
+      "label": "ota_to_http_download",
+      "site": "0x19c30",
+      "target": "0x5e838"
+    },
+    {
+      "label": "download_http_request",
+      "site": "0x5e880",
+      "target": "0x28b04"
+    },
+    {
+      "label": "download_success_reboot",
+      "site": "0x5e88e",
+      "target": "0x5d824"
+    },
+    {
+      "label": "serial_cli_to_http_download",
+      "site": "0x3ede2",
+      "target": "0x5e838"
+    },
+    {
+      "label": "cloud_tcp_connect",
+      "site": "0x1c792",
+      "target": "0x2c828"
+    }
+  ],
+  "cloud_receive_callback_thumb_pointer": "0x188b5",
+  "default_cloud_host": "homemate.orvibo.com",
+  "default_cloud_port": 10001,
+  "partition_table_address": "0xe3b84",
+  "partitions": [
+    {
+      "index": 0,
+      "name": "Bootloader",
+      "owner": 0,
+      "start": "0x0",
+      "length": "0xf000",
+      "options": "0x1"
+    },
+    {
+      "index": 1,
+      "name": "Application",
+      "owner": 0,
+      "start": "0x11000",
+      "length": "0x143000",
+      "options": "0x1"
+    },
+    {
+      "index": 2,
+      "name": "ota",
+      "owner": 0,
+      "start": "0x132000",
+      "length": "0xae000",
+      "options": "0x1"
+    },
+    {
+      "index": 3,
+      "name": "RF Firmware",
+      "owner": 0,
+      "start": "0x1e0000",
+      "length": "0x1000",
+      "options": "0x1"
+    },
+    {
+      "index": 4,
+      "name": "NET info",
+      "owner": 0,
+      "start": "0x1e1000",
+      "length": "0x1000",
+      "options": "0x1"
+    }
+  ],
+  "application_descriptor_overlaps_ota": true,
+  "packet_crypto_verified": false,
+  "bootloader_ota_acceptance_verified": false,
+  "physical_stock_wireless_migration_verified": false
+}

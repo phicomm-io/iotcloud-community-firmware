@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "mico.h"
 #include "session.h"
+#include "discovery_mp.h"
 #include <string.h>
 static void event(const ph_mqtt_session_hooks *h, unsigned state, int rc) {
     if (h->event)
@@ -62,11 +63,13 @@ static void close_session(Client *client, Network *network) {
 
 /* Bootstrap text has stable borrowed bytes. Keep it pending across preflight
  * refusal and service bounded protocol slices; never announce READY early. */
-static __attribute__((noinline)) int publish_wait(Client *client, const char *topic, const char *text,
+static __attribute__((noinline)) int publish_wait(Client *client, const char *topic, const void *bytes, size_t length,
                         const ph_mqtt_session_hooks *h) {
     for (;;) {
         if (!session_valid(h)) return PH_MQTT_RECONFIGURE;
-        int rc = publish_text(client, topic, text);
+        MQTTMessage message={0};message.qos=QOS1;message.retained=1;
+        message.payload=(void*)bytes;message.payloadlen=length;
+        int rc = ph_mqtt_publish(client,topic,&message);
         if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED) return rc;
         rc = ph_mqtt_yield(client, 10);
         if (rc != MQTT_SUCCESS) return rc;
@@ -74,17 +77,20 @@ static __attribute__((noinline)) int publish_wait(Client *client, const char *to
     }
 }
 
-static int announce(Client *client, const mqtt_account_t *account, const ph_mqtt_session_hooks *h) {
-    if (!account->mode)
-        return MQTT_SUCCESS;
-    char topic[MQTT_TOPIC_MAX];
-    if (!mqtt_aux(account, "discovery", account->mac, topic, sizeof(topic)))
-        return MQTT_FAILURE;
-    return h ? publish_wait(client, topic, mqtt_announcement(account), h) :
-        publish_text(client, topic, mqtt_announcement(account));
+static int announce(Client *client, const ph_mqtt_connection *spec, const ph_mqtt_session_hooks *h) {
+    const mqtt_account_t *account=spec->account;
+    if (!account->mode) return MQTT_SUCCESS;
+    char topic[MQTT_TOPIC_MAX];unsigned char bytes[512];
+    if (!mqtt_aux(account,"discovery",account->mac,topic,sizeof(topic))) return MQTT_FAILURE;
+    size_t n=ph_mqtt_discovery_mp(account,spec->firmware_version,spec->variant,bytes,sizeof(bytes));
+    if(!n)return MQTT_FAILURE;
+    /* Fixed buffer lives across deferred retries; no unowned transient writer. */
+    if(h)return publish_wait(client,topic,bytes,n,h);
+    MQTTMessage message={0};message.qos=QOS1;message.retained=1;
+    message.payload=bytes;message.payloadlen=n;return ph_mqtt_publish(client,topic,&message);
 }
 
-static int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
+static __attribute__((noinline)) int subscribe_plan(Client *client, const ph_mqtt_session_hooks *h) {
     ph_mqtt_subscription subscription;
     for (unsigned i = 0; h->subscription(h->context, i, &subscription); i++) {
         if (i >= MAX_MESSAGE_HANDLERS)
@@ -118,7 +124,7 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
         if (!connected)
             event(h, PH_MQTT_CONNECT_ERROR, rc);
         if (rc == MQTT_SUCCESS)
-            rc = announce(client, spec.account, h);
+            rc = announce(client, &spec, h);
         if (rc == MQTT_SUCCESS) {
             rc = subscribe_plan(client, h);
             if (rc != MQTT_SUCCESS)
@@ -135,7 +141,6 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
          * Publish it once only after CONNECT, subscriptions and initial setup
          * succeed; a failed publication must prevent a false READY state. */
         bool online = false;
-        uint32_t acl_at = mico_rtos_get_time();
         if (rc == MQTT_SUCCESS && !session_valid(h))
             rc = PH_MQTT_RECONFIGURE;
         if (rc == MQTT_SUCCESS && (!h->initial_ready || h->initial_ready(h->context))) {
@@ -144,7 +149,6 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                 rc = PH_MQTT_RECONFIGURE;
             if (rc == MQTT_SUCCESS) {
                 online = true;
-                acl_at = mico_rtos_get_time();
                 attempt = 0;
                 event(h, PH_MQTT_READY, 0);
             }
@@ -191,21 +195,15 @@ void ph_mqtt_session_run(Client *client, const ph_mqtt_session_hooks *h) {
                     break;
                 else {
                     online = true;
-                    acl_at = mico_rtos_get_time();
                     attempt = 0;
                     event(h, PH_MQTT_READY, 0);
                 }
             }
-            /* Retained HA birth may restart discovery after the first READY.
-             * Refreshing subscriptions during that batch can replay birth and
-             * restart it forever with otherwise valid slow acknowledgements. */
-            if (online && (!h->initial_ready || h->initial_ready(h->context)) &&
-                (uint32_t)(mico_rtos_get_time() - acl_at) >= 30000) {
-                rc = subscribe_plan(client, h);
-                acl_at = mico_rtos_get_time();
-                if (rc != MQTT_SUCCESS)
-                    event(h, PH_MQTT_SUBSCRIBE_ERROR, rc);
-            }
+            /* Successful MQTT subscriptions persist for this connection.
+             * Re-subscribing periodically replays retained configuration and
+             * HA birth, creating avoidable RX allocations during publication.
+             * A denied initial subscription already retries a fresh session;
+             * namespace/filter edits are handled by session_valid(). */
             /* Keep both poll budgets and the product turn on every round.
              * A short positive protocol slice still reads/maintains keepalive;
              * idle owners retain their original pacing. No drain-until-empty. */
@@ -252,13 +250,18 @@ int ph_mqtt_cleanup(Client *client, const mqtt_account_t *account, const char *h
     char id[192], topic[MQTT_TOPIC_MAX];
     if (!mqtt_identity(account, "", id, sizeof(id)) || !mqtt_leaf(account, "availability", topic, sizeof(topic)))
         return MQTT_FAILURE;
-    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL};
+    ph_mqtt_connection spec = {account, host, user, password, id, topic, port, 5000, NULL, NULL, NULL};
     Network network = {0};
     network.my_socket = -1;
     memset(client, 0, sizeof(*client));
     int rc = open_session(client, &network, &spec);
     if (rc == MQTT_SUCCESS) {
-        rc = announce(client, account, NULL);
+        /* Withdraw only our old retained discovery, never advertise stale identity. */
+        char discovery[MQTT_TOPIC_MAX];
+        rc = MQTT_SUCCESS;
+        if(account->mode)
+            rc=mqtt_aux(account,"discovery",account->mac,discovery,sizeof(discovery)) ?
+                publish_text(client,discovery,"") : MQTT_FAILURE;
         if (rc == MQTT_SUCCESS)
             rc = cleanup();
         if (publish_text(client, topic, "offline") != MQTT_SUCCESS)

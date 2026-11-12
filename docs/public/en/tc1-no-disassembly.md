@@ -1,6 +1,8 @@
 # TC1 OTA internals and custom images
 
-**For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26 or 1.0.0.24.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
+Start at [Firmware & resources]({{SITE_URL}}en/#releases) and choose the latest compatible release for your device with its matching checksums. Pinned versions below are reproducible examples; stated minimum versions, stock versions and migration-tool requirements still apply.
+
+**For TC1 A1 hardware (EMW3031 / MK3031) running stock firmware 1.0.0.26, 1.0.0.24 or 1.0.0.21.** Other stock versions, TC1 A2 and the A1 air purifier are not supported.
 
 This page covers factory OTA internals, image packaging and alternative network layouts. To install directly, follow the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap), with prepared files and Windows / macOS / Linux steps.
 
@@ -16,14 +18,14 @@ There are two connections: **the computer first joins the TC1 provisioning AP to
 
 ### Equipment and tools
 
-- A **TC1 A1 hardware power strip** running stock firmware **1.0.0.26** or **1.0.0.24**.
+- A **TC1 A1 hardware power strip** running stock firmware **1.0.0.26**, **1.0.0.24** or **1.0.0.21**.
 - A computer with **Ethernet and Wi-Fi adapters**, and a router that supports **2.4 GHz open Wi-Fi**.
 - An Ethernet cable, `curl` and **tftpd or another TFTP server**. Python 3 is needed for custom image packaging or the scripts below.
 - The community application-slot image `tc1_community.image.bin` for this hardware.
 
 Other equivalent topologies work too. You need a client that can join the TC1 provisioning AP to send the trigger, and a file server that TC1 can reach through the OTA AP afterward.
 
-Review [power and wiring requirements](flash-prep) and [firmware package selection](firmware-update). Flashing erases the inactive application slot and reboots the device. The retained stock slot is **not** a guaranteed automatic rollback.
+Review [power and wiring requirements](flash-prep) and [firmware package selection](firmware-update). Flashing erases the inactive application slot and reboots the device. Use [wired recovery](tc1-flash) if installation fails.
 
 ### Prepare the update file
 
@@ -111,24 +113,25 @@ Join `Phicomm_TC1_XXXX` using the computer's Wi-Fi adapter and check that it has
 curl -s -m 5 http://10.10.10.1:8000/read-domain
 ```
 
-`VERSION` must be `1.0.0.26` or `1.0.0.24` with `COMPILE_TIME` `Apr 13 2018 10:09:06`. Do not continue on a different build; the later payload target must match the detected version (see the next step).
+`VERSION` must be `1.0.0.26` or `1.0.0.24` with `COMPILE_TIME` `Apr 13 2018 10:09:06`, or `1.0.0.21` with `COMPILE_TIME` `Oct 29 2017 11:09:21`. Do not continue on a different build; the later payload target must match the detected version (see the next step).
 
 ### 3. Send the trigger request
 
-Download the payload for your stock version to skip Python generation: [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin) for 1.0.0.26, [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) for 1.0.0.24. Complete Windows / macOS / Linux commands are in the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap).
+Download the payload for your stock version to skip Python generation: [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin) for 1.0.0.26, [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) for 1.0.0.24, [tftp-trigger-1.0.0.21.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.21.bin) for 1.0.0.21. Complete Windows / macOS / Linux commands are in the [illustrated OTA guide](tc1-no-disassembly-ethernet-wifi-ap).
 
-The payload target address depends on the stock version; both versions share the same in-frame offsets and differ only by an address shift:
+The payload target address depends on the stock version; all three versions share the same in-frame offsets and differ only by an address shift:
 
 | Stock version | Payload target (little-endian) | Notes |
 | --- | --- | --- |
 | 1.0.0.26 | `0x1F073D9F` (`9f 3d 07 1f`) | factory OTA thread body |
 | 1.0.0.24 | `0x1F073D63` (`63 3d 07 1f`) | same thread body, address shifted by −0x3C |
+| 1.0.0.21 | `0x1F073D2F` (`2f 3d 07 1f`) | same thread body, address shifted by −0x34 |
 
 Keep the computer's Wi-Fi adapter connected to the TC1 provisioning AP and run these commands in a terminal. Python creates the stack-overflow trigger file; `curl` sends it to the device. Send it once, then watch the device and TFTP logs. Replace the target address from the table above:
 
 ```sh
 python3 - <<'PY'
-# 0x1F073D9F for 1.0.0.26; 0x1F073D63 for 1.0.0.24
+# 0x1F073D9F for 1.0.0.26; 0x1F073D63 for 1.0.0.24; 0x1F073D2F for 1.0.0.21
 body = b'A' * 392 + (0x1F073D9F).to_bytes(4, 'little') + b'\0'
 open('tftp-trigger.bin', 'wb').write(body)
 print(len(body))
@@ -138,7 +141,9 @@ curl --max-time 30 --header 'Content-Type: application/json' \
   http://10.10.10.1:8000/OTA
 ```
 
-`OTA AAAA...` only means the request was accepted — **not** that flashing succeeded. If the connection drops, watch the device and do not retrigger immediately.
+A small helper script is also included: [gen-trigger.py](assets/tools/tc1-no-disassembly/gen-trigger.py), run `python3 gen-trigger.py --version 1.0.0.21 --out tftp-trigger.bin`.
+
+After receiving `OTA AAAA...`, wait for download and reboot. If the connection drops, watch the device and do not retrigger immediately.
 
 ### 4. Wait for the download and first boot
 
@@ -152,7 +157,7 @@ After a successful first boot, the open AP **`TC1_A1-AP-<last six MAC chars in u
 
 ### 5. Confirm success and restore your network
 
-Check the stock identity, complete TFTP transfer, new firmware AP and local web UI separately. HTTP 200, a device disconnect or a TFTP transfer alone does not prove success.
+Check the stock identity and complete TFTP transfer, then join the new firmware hotspot and confirm the version in its local WebUI.
 
 Once the new firmware works, shut down the temporary OTA AP and TFTP service and restore the interface addresses and firewall rules changed for flashing. If you created temporary interfaces and dnsmasq TFTP settings on OpenWrt / ImmortalWrt, remove those settings and restore the original network.
 
@@ -160,7 +165,7 @@ Once the new firmware works, shut down the temporary OTA AP and TFTP service and
 
 | Symptom | Likely cause |
 | --- | --- |
-| No `Phicomm_TC1_XXXX` | Wrong button rhythm, or not A1 hardware / not 1.0.0.26 or 1.0.0.24 |
+| No `Phicomm_TC1_XXXX` | Wrong button rhythm, or not A1 hardware / not 1.0.0.26, 1.0.0.24 or 1.0.0.21 |
 | `/OTA` returns 404 or hangs | Not in provisioning mode, or client outside `10.10.10.x/24` |
 | Device never joins the OTA AP | Not 2.4 GHz, wrong SSID, or client isolation enabled |
 | TFTP stalls after the first block | Firewall allows only UDP 69, not the transfer session |

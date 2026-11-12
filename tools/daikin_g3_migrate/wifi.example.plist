@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>
+<key>device_name</key><string>SENSOR3_AABBCC</string>
+<key>ssid</key><string>YOUR_2G_WIFI</string>
+<key>password</key><string>YOUR_WIFI_PASSWORD</string>
+<key>gateway_ip</key><string>192.168.1.10</string>
+<key>gateway_mac</key><string>020000000001</string>
+</dict></plist>

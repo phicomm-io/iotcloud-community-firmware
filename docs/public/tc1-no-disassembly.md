@@ -1,6 +1,8 @@
 # TC1 免拆刷机：原理与自备镜像
 
-**适用于 TC1 A1 硬件（EMW3031 / MK3031）、原厂版本 1.0.0.26 与 1.0.0.24。** 其他原厂版本、TC1 A2 与 A1 空气净化器不适用。
+下载时先到[固件与资源下载]({{SITE_URL}}#releases)选择该设备的最新兼容版本，并使用同版本校验清单。文中的固定版本用于可复现的操作示例；明确标出的最低版本、原厂版本和迁移工具条件仍需满足。
+
+**适用于 TC1 A1 硬件（EMW3031 / MK3031）、原厂版本 1.0.0.26、1.0.0.24 与 1.0.0.21。** 其他原厂版本、TC1 A2 与 A1 空气净化器不适用。
 
 本页介绍原厂 OTA 原理、镜像打包和其他网络拓扑。直接安装请看[免拆刷机图文教程](tc1-no-disassembly-ethernet-wifi-ap)，内含配套文件和 Windows / macOS / Linux 操作。
 
@@ -16,14 +18,14 @@
 
 ### 设备与工具
 
-- 一台 **TC1 A1 硬件版排插**，原厂版本为 **1.0.0.26** 或 **1.0.0.24**。
+- 一台 **TC1 A1 硬件版排插**，原厂版本为 **1.0.0.26**、**1.0.0.24** 或 **1.0.0.21**。
 - 一台同时有**有线网卡和无线网卡**的电脑，以及一台支持 **2.4 GHz 开放 Wi-Fi** 的路由器。
 - 一根网线、`curl` 和 **tftpd 等 TFTP 服务软件**；自行打包镜像或运行下文脚本时需要 Python 3。
 - 对应设备的社区应用槽镜像 `tc1_community.image.bin`。
 
 也可以使用其他等效拓扑。关键是同时具备两条连接：一个客户端能连接 TC1 配网热点发送请求，TC1 随后能通过 OTA 热点访问文件服务器。
 
-刷机前了解[供电与接线要求](flash-prep)以及[固件包的选择](firmware-update)。刷写会擦除非活动应用槽并重启设备；原厂保留槽**不构成自动回退保证**。
+刷机前了解[供电与接线要求](flash-prep)以及[固件包的选择](firmware-update)。刷写会擦除非活动应用槽并重启设备；失败时按[有线恢复流程](tc1-flash)处理。
 
 ### 准备升级文件
 
@@ -111,24 +113,25 @@ Linux/macOS 监听 69 端口通常需要相应权限；Windows 需按防火墙�
 curl -s -m 5 http://10.10.10.1:8000/read-domain
 ```
 
-`VERSION` 应为 `1.0.0.26` 或 `1.0.0.24`，`COMPILE_TIME` 为 `Apr 13 2018 10:09:06`。版本不符时不要继续；后续 payload 的目标地址必须与识别出的版本对应，见下一步。
+`VERSION` 应为 `1.0.0.26` 或 `1.0.0.24`（`COMPILE_TIME` 为 `Apr 13 2018 10:09:06`），或 `1.0.0.21`（`COMPILE_TIME` 为 `Oct 29 2017 11:09:21`）。版本不符时不要继续；后续 payload 的目标地址必须与识别出的版本对应，见下一步。
 
 ### 3. 发送触发请求
 
-可直接下载对应版本的 payload 文件，跳过 Python 生成步骤：1.0.0.26 用 [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，1.0.0.24 用 [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin)。Windows / macOS / Linux 的完整命令见[免拆刷机图文教程](tc1-no-disassembly-ethernet-wifi-ap)。
+可直接下载对应版本的 payload 文件，跳过 Python 生成步骤：1.0.0.26 用 [tftp-trigger.bin](assets/tools/tc1-no-disassembly/tftp-trigger.bin)，1.0.0.24 用 [tftp-trigger-1.0.0.24.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin)，1.0.0.21 用 [tftp-trigger-1.0.0.21.bin](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.21.bin)。Windows / macOS / Linux 的完整命令见[免拆刷机图文教程](tc1-no-disassembly-ethernet-wifi-ap)。
 
-payload 的目标地址随原厂版本变化；两个版本的帧内偏移相同，只是地址平移：
+payload 的目标地址随原厂版本变化；三个版本的帧内偏移相同，只是地址平移：
 
 | 原厂版本 | payload 目标地址（小端） | 说明 |
 | --- | --- | --- |
 | 1.0.0.26 | `0x1F073D9F`（`9f 3d 07 1f`） | 工厂 OTA 线程体 |
 | 1.0.0.24 | `0x1F073D63`（`63 3d 07 1f`） | 同一线程体，地址平移 −0x3C |
+| 1.0.0.21 | `0x1F073D2F`（`2f 3d 07 1f`） | 同一线程体，地址平移 −0x34 |
 
 保持电脑无线网卡连接 TC1 配网热点，在电脑终端执行以下命令：Python 先生成栈溢出触发文件，`curl` 再将它发送给设备。只发送一次，随后观察设备与 TFTP 日志。目标地址按上表替换：
 
 ```sh
 python3 - <<'PY'
-# 1.0.0.26 用 0x1F073D9F；1.0.0.24 用 0x1F073D63
+# 1.0.0.26 用 0x1F073D9F；1.0.0.24 用 0x1F073D63；1.0.0.21 用 0x1F073D2F
 body = b'A' * 392 + (0x1F073D9F).to_bytes(4, 'little') + b'\0'
 open('tftp-trigger.bin', 'wb').write(body)
 print(len(body))
@@ -138,7 +141,9 @@ curl --max-time 30 --header 'Content-Type: application/json' \
   http://10.10.10.1:8000/OTA
 ```
 
-返回 `OTA AAAA...` 只表示请求已被接收，**不代表刷写成功**。连接中断或返回未确认时，先观察设备状态，不要立即重复触发。
+也可以使用附带的小脚本：[gen-trigger.py](assets/tools/tc1-no-disassembly/gen-trigger.py)，`python3 gen-trigger.py --version 1.0.0.21 --out tftp-trigger.bin`。
+
+收到 `OTA AAAA...` 后，等待设备下载并重启。连接中断或返回未确认时，先观察设备状态，不要立即重复触发。
 
 ### 4. 等待下载与首次启动
 
@@ -152,7 +157,7 @@ TC1 在 OTA 网络中使用 `10.<MAC 后三字节逐字节转十进制>`、掩�
 
 ### 5. 确认完成并恢复网络
 
-分别确认原厂识别信息、TFTP 完整下载记录、新固件热点和本地网页可访问。HTTP 200、设备掉线或一次 TFTP 传输都不能单独作为刷机成功的依据。
+核对原厂识别信息与 TFTP 完整下载记录，再连接新固件热点，打开本地网页确认版本。
 
 确认新固件可用后，关闭临时 OTA 热点与 TFTP 服务，恢复本次调整的网卡地址和防火墙配置。使用 OpenWrt / ImmortalWrt 搭建临时接口与 dnsmasq TFTP 的，删除本次添加的临时配置，恢复原网络。
 
@@ -160,7 +165,7 @@ TC1 在 OTA 网络中使用 `10.<MAC 后三字节逐字节转十进制>`、掩�
 
 | 现象 | 常见原因 |
 | --- | --- |
-| 看不到 `Phicomm_TC1_XXXX` | 按键节奏不对，或设备不是 A1 硬件 / 不是 1.0.0.26 或 1.0.0.24 |
+| 看不到 `Phicomm_TC1_XXXX` | 按键节奏不对，或设备不是 A1 硬件 / 不是 1.0.0.26、1.0.0.24 或 1.0.0.21 |
 | `/OTA` 返回 404 或无响应 | 未处于配网模式，或客户端不在 `10.10.10.x/24` |
 | 设备没有加入 OTA 热点 | 热点不是 2.4 GHz、名称不是 `PHICOMM_OTA_AP`，或开启了客户端隔离 |
 | TFTP 只传了开头 | 防火墙只放行 UDP 69，未放行传输会话端口 |

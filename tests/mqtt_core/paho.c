@@ -187,7 +187,7 @@ static int prepare(void *ctx,ph_mqtt_connection *spec){
   unsigned a=multi_attempt++;
   open_fail=a<6;subscribe_fail=a==6;missing_ack=a==7;inject_large=a==8;
  }
- *spec=(ph_mqtt_connection){&account,"broker","user","password","device","tx/availability",1883,50,NULL};return 1;
+ *spec=(ph_mqtt_connection){&account,"broker","user","password","device","tx/availability",1883,50,NULL,"test","full"};return 1;
 }
 static bool subscription_plan(void *ctx,unsigned i,ph_mqtt_subscription *spec){
  (void)ctx;if(i)return false;*spec=(ph_mqtt_subscription){"rx/#",QOS1,handler};return true;
@@ -260,7 +260,7 @@ static void gated_sessions(void){
   if(mode>=3&&mode<=6)assert(online_publications==gate_online_before);
   if(mode==2||mode==7||mode==8)assert(online_publications==gate_online_before+1);
   if(mode==9)assert(subscriptions==subscribed+1);
-  if(mode==10)assert(subscriptions==subscribed+2);
+  if(mode==10)assert(subscriptions==subscribed+1);
  }
  gate_mode=0;
 }

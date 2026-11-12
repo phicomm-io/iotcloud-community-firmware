@@ -2,7 +2,7 @@
 #include "status_guard.h"
 
 #include "main.h"
-#include "http_server/json_buffer.h"
+#include "../common/typed_wire.h"
 #include "mico_socket.h"
 #include "user_gpio.h"
 #include "http_server/web_log.h"
@@ -124,17 +124,16 @@ OSStatus WifiScanStart(void) {
     scan_busy=true;scan_count=0;mico_time_get_time(&scan_started);mico_rtos_unlock_mutex(&scan_lock);
     micoWlanStartScanAdv();return kNoErr;
 }
-char *WifiScanJson(void) {
+bool WifiScanMp(ph_writer *out) {
     mico_rtos_lock_mutex(&scan_lock);
     mico_time_t now;mico_time_get_time(&now);
     if(scan_busy && (mico_time_t)(now-scan_started)>=20000)scan_busy=false;
-    size_t capacity=64+(size_t)scan_count*256;
-    char *data=malloc(capacity);if(!data){mico_rtos_unlock_mutex(&scan_lock);return NULL;}
-    JsonBuffer b={data,0,capacity,true};
-    jb_printf(&b,"{\"scanning\":%s,\"networks\":[",scan_busy?"true":"false");
-    for(int i=0;i<scan_count;++i){jb_printf(&b,"%s{",i?",":"");jb_field(&b,"ssid",scan_results[i].ssid);jb_printf(&b,"\"rssi\":%d,\"security\":%d}",scan_results[i].rssi,scan_results[i].security);}
-    jb_printf(&b,"]}");mico_rtos_unlock_mutex(&scan_lock);
-    if(!b.valid){free(data);return NULL;}return data;
+    phw_begin(out,NULL,false);phw_bool(out,"scanning",scan_busy);phw_begin(out,"networks",true);
+    for(int i=0;i<scan_count;i++){
+        phw_begin(out,NULL,false);phw_text(out,"ssid",scan_results[i].ssid);
+        phw_int(out,"rssi",scan_results[i].rssi);phw_int(out,"security",scan_results[i].security);phw_end(out);
+    }
+    phw_end(out);phw_end(out);mico_rtos_unlock_mutex(&scan_lock);return !out->failed;
 }
 void WifiScanCallback(ScanResult_adv *result,void *arg) {
     if(!result)return;

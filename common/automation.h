@@ -1,7 +1,11 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include "service.h"
+#include "typed_wire.h"
+#include "wall_schedule.h"
+#ifdef AUTOMATION_TC1
+#include "power_trigger.h"
+#endif
 #define AUTOMATION_MAGIC 0x41555432u
 #ifdef AUTOMATION_TC1
 #define AUTOMATION_TASKS 128
@@ -18,17 +22,14 @@ enum { AUTO_LIGHT_EFFECT = AUTO_REBOOT + 1, AUTO_FILTER_RESET, AUTO_LIGHT_ALWAYS
 #endif
 #define AUTOMATION_BUTTON_SLOTS (AUTOMATION_KEYS * 34)
 enum { AUTO_WAITING, AUTO_EXECUTED, AUTO_MISSED, AUTO_BUSY, AUTO_MIGRATED_DISABLED, AUTO_CANCELLED };
-/* once: 0=weekly, 1=wall-clock once, 2=volatile countdown (at=duration seconds).
+/* once: 0=weekly, 1=wall-clock once, 2=volatile countdown (at=duration seconds),
+ * 3=TC1 power rule (days=comparison, at=milliwatts, last=duration seconds,
+ * minute=0, action=outlet on/off). No persisted timer or deadline.
  * The fixed Flash layout stays unchanged. A reboot cancels active countdowns. */
 #define AUTOMATION_COUNTDOWN_MAX 86400u
 /* Stable fixed-width Flash ABI: never stores pointers or JSON. */
-typedef struct { uint8_t kind, target, value, speed, red, green, blue, reserved; } automation_action_t;
-typedef struct {
-    uint16_t id, minute;
-    uint8_t enabled, days, once, state;
-    uint32_t at, last;
-    automation_action_t action;
-} automation_task_t;
+typedef ph_schedule_action automation_action_t;
+typedef ph_schedule_task automation_task_t;
 /* On-flash v4/v5 prefix remains fixed at two keys, including on A1. */
 typedef struct {
     uint32_t magic, revision;
@@ -53,7 +54,10 @@ void automation_defaults(automation_config_t *);
 void automation_load(automation_config_t *);
 bool automation_save(const automation_config_t *);
 /* Uses same transport dispatcher; unknown action leaves handled=false. */
-json_object *automation_command(const char *,json_object *,const char **,bool *handled);
+bool automation_mp(const char *,const ph_value *,ph_writer *,const char **);
+#if !defined(FEATURE_DEVICE_A1) && !defined(AUTOMATION_TC1)
+bool m1_automation_execute(const automation_action_t *,bool button);
+#endif
 void automation_poll(bool clock_valid);
 void automation_button(unsigned key,unsigned clicks,unsigned seconds);
 #ifdef FEATURE_DEVICE_A1
@@ -64,4 +68,15 @@ bool a1_automation_execute(const automation_action_t *, bool button);
 /* Read only the selected map; execute without constructing JSON graphs. */
 bool tc1_automation_load_button(unsigned key, unsigned slot, automation_action_t *);
 bool tc1_automation_execute(const automation_action_t *, bool button);
+bool tc1_automation_load_power_rules(ph_power_rule out[PH_POWER_RULES_MAX],unsigned *count);
+bool tc1_automation_power_sample(uint32_t *milliwatts);
+bool tc1_automation_power_execute(const ph_power_rule *);
+void automation_power_manual_override(void);
+static inline bool tc1_power_rule_from_task(const automation_task_t *t,ph_power_rule *r){
+    if(t->once!=3||!t->id||t->minute||t->action.kind!=AUTO_OUTLET||t->action.speed||
+       t->action.red||t->action.green||t->action.blue||t->action.reserved)return false;
+    *r=(ph_power_rule){.id=t->id,.enabled=t->enabled,.comparison=t->days,
+        .power_milliwatts=t->at,.seconds=t->last,.target=t->action.target,.on=t->action.value};
+    return ph_power_rule_valid(r,6);
+}
 #endif

@@ -3,7 +3,6 @@
 #include "../common/generated/build_version.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
@@ -58,26 +57,18 @@ void phicomm_http_trace(unsigned phase, int fd, int detail)
     errno=saved_errno;
 }
 
-size_t tc1_http_trace_format(char *output, size_t capacity)
+void tc1_http_trace_mp(ph_writer *w)
 {
-    trace_initialize();
-    bool valid=previous.magic==TRACE_MAGIC;
-    int n=snprintf(output,capacity,"{\"code\":\"ok\",\"data\":{\"previous_valid\":%s,\"minimum_sampled_free\":%lu,\"records\":[",
-        valid?"true":"false",(unsigned long)(valid?previous.minimum_free:0));
-    if (n<0 || (size_t)n>=capacity) return 0;
-    size_t used=n;unsigned count=0;
-    /* Bounded even if warm SRAM was lost/corrupted. Validate each commit. */
-    for (unsigned index=0;valid && index<TRACE_SLOTS;index++) {
-        uint32_t seq=previous.sequence-(TRACE_SLOTS-1-index);
-        if (!seq) continue;
+    trace_initialize();bool valid=previous.magic==TRACE_MAGIC;
+    phw_begin(w,NULL,false);phw_text(w,"code","ok");phw_begin(w,"data",false);
+    phw_bool(w,"previous_valid",valid);phw_u32(w,"minimum_sampled_free",valid?previous.minimum_free:0);
+    phw_begin(w,"records",true);
+    for(unsigned index=0;valid && index<TRACE_SLOTS;index++){
+        uint32_t seq=previous.sequence-(TRACE_SLOTS-1-index);if(!seq)continue;
         const trace_record_t *r=&previous.records[(seq-1)%TRACE_SLOTS];
-        if (r->sequence!=seq || r->seal!=~seq || r->phase<1 || r->phase>HTTP_TRACE_CLIENT_SELECT_RETURN) continue;
-        n=snprintf(output+used,capacity-used,"%s{\"seq\":%lu,\"stage\":%lu,\"ms\":%lu,\"fd\":%ld,\"detail\":%ld,\"heap\":%lu}",
-            count?",":"",(unsigned long)seq,(unsigned long)r->phase,(unsigned long)r->milliseconds,
-            (long)r->fd,(long)r->detail,(unsigned long)r->free_memory);
-        if (n<0 || (size_t)n>=capacity-used) return 0;
-        used+=n;count++;
+        if(r->sequence!=seq || r->seal!=~seq || r->phase<1 || r->phase>HTTP_TRACE_CLIENT_SELECT_RETURN)continue;
+        phw_begin(w,NULL,false);phw_u32(w,"seq",seq);phw_u32(w,"stage",r->phase);phw_u32(w,"ms",r->milliseconds);
+        phw_int(w,"fd",r->fd);phw_int(w,"detail",r->detail);phw_u32(w,"heap",r->free_memory);phw_end(w);
     }
-    n=snprintf(output+used,capacity-used,"]}}");
-    return n<0 || (size_t)n>=capacity-used?0:used+(size_t)n;
+    phw_end(w);phw_end(w);phw_end(w);
 }

@@ -1,0 +1,26 @@
+{
+  "source": "phicomm-community-firmware/common",
+  "git_head": "cc7b0df3398e1f3d74f326c5843b7cea81e69a1e",
+  "note": "Clean shared inputs with portable binary-only adaptations recorded in lab-openbeken.patch.",
+  "files": {
+    "typed_wire.h": "7f865471a07e31254a6d5f3b76437a54fa19c7e4a39d8532f2ba20c78c0379ae",
+    "typed_wire.inc": "a62cd254d89265208c9daddc7adab9884f590b3b86525608969411dc37abab87",
+    "wire_format.h": "7574eae2abc26370b6466e8c90d9bfc275eb5eac15c6713dd495b9a5bc563c0d",
+    "wire_primitives.inc": "f1d986a5c98af8ffaadef00adef523210a7ddd037d96a00c12454bbcb42efab2",
+    "binary_reader.h": "eaffea0bdece20ee6e29f819e96bf42c05603339316a03fe9e10e3d1b1c70b79",
+    "binary_reader.inc": "64bcec0b8f175c0e99535b05e17281ad817caa721d567ef12f3663042d229aff",
+    "status_request.h": "81116ffaa7756bce9f02e198b75f4b84c2eaf419bc3dbf9fb68c9e3e19012154",
+    "local_auth.h": "dbad035d9f3d5efc387340e4eacfefb61d118c28f97dc9cff5c42ac484f60b8b",
+    "local_auth.c": "f024a90cacf93932b50002d05d69418dec65e259386ae392ecd44e1995d8d7ba",
+    "json_number_checked.h": "6d01c4fd18cc9db739ed4918d2c18628182a7179ba2a92c7f21c1f3718c3cd43",
+    "sensor_field.h": "38c559b580ff3fd7a3ca3f954b6dfd1f9c40a1d71293355cc0cbc524b93e0600",
+    "sensor_mp.h": "81c2a63b5e91666d3497974097d74e135faca704652578a34cddcd14a34a5bed",
+    "power_trigger.h": "53dd46e9f564b304c5525f9b6138d6b62822c21cf00da8bb9503bc320b48946b"
+  },
+  "adaptations": {
+    "local_auth.c": "Valid-password HTTP login replaces the least recently used session when all four slots are occupied; other transports retain the lab policy.",
+    "typed_wire.inc": "All parser/writer entry points reject the JSON format; MessagePack/CBOR only.",
+    "printbuf.h": "Bounded portable printbuf adapter, no JSON DOM.",
+    "json_heap.h": "libc allocation shim for the shared bounded writer."
+  }
+}

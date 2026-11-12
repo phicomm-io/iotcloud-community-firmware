@@ -44,3 +44,10 @@ __pycache__/
 /platform/
 
 /TC1/generated/
+
+/private/
+/BRY88BBA15G/build*/
+/BRY88BBA15G/__pycache__/
+
+# Native Bluetooth provisioning app generated on macOS
+*.app/

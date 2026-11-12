@@ -68,11 +68,11 @@
         .sort((a, b) => Notes.compareVersions(b.version, a.version)).slice(0, 1);
       if (!releases.length) throw {code: 'CANDIDATE_UNAVAILABLE', reason: 'No release candidate is available in this archive.'};
       for (const [model, label] of [['m1', t('M1 空气检测仪', 'M1 air quality monitor')], ['a1', t('A1 空气净化器', 'A1 air purifier')],
-        ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('DAIKIN 大金检测仪', 'DAIKIN air quality monitor')]]) {
+        ['tc1', t('TC1 智能排插', 'TC1 power strip')], ['daikin', t('大金空气质量检测（1/2代）', 'Daikin air quality monitor (G1/G2)')], ['bry88bba15g', t('大金空气质量检测（3代）', 'Daikin air quality monitor (G3)')]]) {
         const group = element('article', null, 'notes-change'); group.id = 'notes-candidate-' + model;
         group.append(element('h3', label));
-        const guide = element('a', t('功能与使用指南', 'Operation guide')); guide.href = '/guides/' + (english ? 'en/' : '') + model + '-guide.html';
-        const demo = element('a', t('界面演示', 'Interface demo')); demo.href = '/demos/' + model + '/';
+        const guide = element('a', t('功能与使用指南', 'Operation guide')); guide.href = '/guides/' + (english ? 'en/' : '') + (model==='bry88bba15g'?'daikin-g3':model) + '-guide.html';
+        const demo = element('a', t('界面演示', 'Interface demo')); demo.href = '/demos/' + (model==='bry88bba15g'?'daikin-g3':model) + '/';
         const actions = element('p', null, 'notes-actions'); actions.append(guide, demo); group.append(actions);
         let available = false;
         for (const release of releases) {
@@ -102,8 +102,8 @@
         if (!available) group.append(element('p', t('暂无此型号的候选版文件。', 'No candidate files are available for this model.')));
         candidateDownloads.append(group);
       }
-      candidateStatus.textContent = t('RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。稳定版仍为 ',
-        'RC releases are beta builds. Major changes are still expected; using them is not recommended. The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
+      candidateStatus.textContent = t('RC 用于 Beta 测试。稳定版仍为 ',
+        'RC builds are for beta testing. The stable release remains ') + snapshot.catalog.stable + (english ? '.' : '。');
     }
     function clearResult() { resultBox.replaceChildren(); share.hidden = true; app.removeAttribute('data-report-state'); }
     function invalidate() {

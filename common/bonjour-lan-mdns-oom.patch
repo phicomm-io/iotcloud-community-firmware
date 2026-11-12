@@ -1,0 +1,107 @@
+--- a/MiCO/system/mdns/mico_mdns.c
++++ b/MiCO/system/mdns/mico_mdns.c
+@@ -537,57 +537,48 @@
+ 
+ OSStatus mdns_add_record( mdns_init_t init, WiFi_Interface interface, uint32_t time_to_live )
+ {
+-  int len;
+   OSStatus err = kNoErr;
+-  uint32_t insert_index = 0xFF;
+-
+-  if( bonjour_instance == false ){
+-    err = start_bonjour_service( );
+-    require_noerr(err, exit);
+-  }
+-  
+-  insert_index = find_record_by_service ( init.service_name, interface );
+-  if( insert_index == 0xFF)
+-    insert_index = find_empty_record ( );
+-
+-  require_action( insert_index < available_service_count, exit, err = kNoResourcesErr);
+-  
+-  mico_rtos_lock_mutex( &bonjour_mutex );
+-
+-  _clean_record_resource( &available_services[insert_index] );
+-
+-  available_services[insert_index].interface = interface;
+-  available_services[insert_index].service_name = (char*)__strdup(init.service_name);
+-  available_services[insert_index].hostname = (char*)__strdup(init.host_name);
+-
++  uint32_t insert_index;
++  size_t len;
++  dns_sd_service_record_t next;
++  memset(&next, 0, sizeof(next));
++  require_action(init.service_name && init.host_name && init.instance_name && init.txt_record,
++                 exit, err = kParamErr);
++  if(!bonjour_instance){err = start_bonjour_service();require_noerr(err, exit);}
++  mico_rtos_lock_mutex(&bonjour_mutex);
++  /* Select and publish under the same lock as response/announce readers.
++   * Preserve the previous complete record on allocation/thread failure. */
++  insert_index = find_record_by_service(init.service_name, interface);
++  if(insert_index == 0xFF)insert_index = find_empty_record();
++  require_action(insert_index < available_service_count, unlock, err = kNoResourcesErr);
++  next.service_name = (char *)__strdup(init.service_name);
++  next.hostname = (char *)__strdup(init.host_name);
+   len = strlen(init.instance_name);
+-  available_services[insert_index].instance_name = (char*)malloc(len+3);//// 0xc00c+\0
+-  memcpy(available_services[insert_index].instance_name, init.instance_name, len);
+-  available_services[insert_index].instance_name[len]= 0xc0;
+-  available_services[insert_index].instance_name[len+1]= 0x0c;
+-  available_services[insert_index].instance_name[len+2]= 0;
+-  
+-  available_services[insert_index].txt_att = (char*)__strdup(init.txt_record);
+-
+-  available_services[insert_index].port = init.service_port;
+-  available_services[insert_index].state = RECORD_UPDATE;
+-  if ( strcmp( available_services[insert_index].service_name, "_easylink_config._tcp.local." ) == 0 && interface == Station) {
+-      available_services[insert_index].count_down_max = 50;
+-  } else {
+-      available_services[insert_index].count_down_max = 10;
+-  }
+-  available_services[insert_index].count_down = available_services[insert_index].count_down_max;
+-  available_services[insert_index].ttl = time_to_live;
+-  
+-  if( _bonjour_announce_handler == NULL)
+-    mico_rtos_create_thread( &_bonjour_announce_handler, MICO_APPLICATION_PRIORITY, "Bonjour Announce", _bonjour_send_anounce_thread, 0x400, 0 );
+-
+-  mico_rtos_unlock_mutex( &bonjour_mutex );
+-
++  require_action(len <= 255, unlock, err = kParamErr);
++  next.instance_name = (char *)malloc(len + 3);
++  next.txt_att = (char *)__strdup(init.txt_record);
++  require_action(next.service_name && next.hostname && next.instance_name && next.txt_att,
++                 unlock, err = kNoMemoryErr);
++  memcpy(next.instance_name, init.instance_name, len);
++  next.instance_name[len] = 0xc0;next.instance_name[len+1] = 0x0c;next.instance_name[len+2] = 0;
++  next.interface = interface;next.port = init.service_port;next.ttl = time_to_live;
++  next.state = RECORD_UPDATE;
++  next.count_down_max = !strcmp(next.service_name, "_easylink_config._tcp.local.") && interface == Station ? 50 : 10;
++  next.count_down = next.count_down_max;
++  if(_bonjour_announce_handler == NULL){
++    err = mico_rtos_create_thread(&_bonjour_announce_handler, MICO_APPLICATION_PRIORITY,
++                                  "Bonjour Announce", _bonjour_send_anounce_thread, 0x400, 0);
++    require_noerr(err, unlock);
++  }
++  _clean_record_resource(&available_services[insert_index]);
++  available_services[insert_index] = next;
++  memset(&next, 0, sizeof(next));
++unlock:
++  _clean_record_resource(&next);
++  mico_rtos_unlock_mutex(&bonjour_mutex);
+ exit:
+   return err;
+ }
+-
+ 
+ void mdns_update_txt_record( char *service_name, WiFi_Interface interface, char *txt_record )
+ {
+@@ -659,7 +650,8 @@
+ 
+   mico_rtos_lock_mutex( &bonjour_mutex );
+ 
+-  for ( i = 0; i < available_service_count && is_service_match( &available_services[i], service_name, interface ); i++ ){
++  for ( i = 0; i < available_service_count; i++ ){
++    if( !is_service_match( &available_services[i], service_name, interface ) ) continue;
+     available_services[i].state = RECORD_UPDATE;
+     available_services[i].count_down = available_services[i].count_down_max;
+     insert_index = i;

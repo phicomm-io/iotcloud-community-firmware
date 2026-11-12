@@ -12,6 +12,20 @@ spec.loader.exec_module(version_tool)
 
 
 class VersionTests(unittest.TestCase):
+    def test_ota_metadata_channel_follows_build_provenance(self):
+        with patch.dict('os.environ', {}, clear=True):
+            self.assertIn('"/ota/v1"', version_tool.ota_config({'base_version':'1.0.0'}))
+            for version in ('1.0.0-rc', '1.0.0-rc.4'):
+                self.assertIn('"/ota/candidate"', version_tool.ota_config({'base_version':version}))
+        with patch.dict('os.environ', {'PHICOMM_OTA_CHANNEL':'candidate'}, clear=True):
+            self.assertIn('"/ota/candidate"', version_tool.ota_config({'base_version':'1.0.0'}))
+        with patch.dict('os.environ', {'PHICOMM_OTA_CHANNEL':'stable'}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'cannot use stable'):
+                version_tool.ota_config({'base_version':'1.0.0-rc.4'})
+        with patch.dict('os.environ', {'PHICOMM_OTA_CHANNEL':'auto'}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'candidate or stable'):
+                version_tool.ota_config({'base_version':'1.0.0'})
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

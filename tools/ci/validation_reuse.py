@@ -14,23 +14,25 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILE = 'full-firmware-validation-v1'
+PROFILE = 'full-firmware-validation-v2'
 ARTIFACT = 'full-validation-evidence'
 WORKFLOW = '.github/workflows/build.yml'
-NEEDS = ('frontend', 'firmware', 'esp', 'release-checks', 'feature-tests')
+NEEDS = ('frontend', 'firmware', 'esp', 's30', 'release-checks', 'feature-tests')
 JOBS = {
     'Verify locked frontend dependency': ('Validate pinned protocol contracts',),
     'tc1 firmware variants': ('Build full firmware', 'Build firmware without frontend resources', 'Test TC1 protocol and HTTP regressions'),
     'a1 firmware variants': ('Build full firmware', 'Build firmware without frontend resources', 'Build and collect A1 fresh-air variants'),
     'm1 firmware variants': ('Build full firmware', 'Build firmware without frontend resources'),
-    'DAIKIN ESP32 full firmware': ('Test actual OTA handler and signed variant identity', 'Test ESP32 protocol and actual embedded page'),
-    'DAIKIN ESP32 hub firmware': ('Test actual OTA handler and signed variant identity',
-        'Check out pinned ESP-IDF NVS host-test sources', 'Test hub broker, transports and bounded storage',
-        'Test production HAP value handling and byte output', 'Test locked hub frontend with production broker'),
+    'DAIKIN ESP32 full firmware': ('Test actual OTA handler, MessagePack wire and device sessions', 'Test ESP32 protocol and actual embedded page'),
+    'DAIKIN ESP32 g3 firmware': ('Test G3 bridge and stock MCU fallback',),
+    'DAIKIN ESP32 hub firmware': ('Check out pinned ESP-IDF NVS host-test sources', 'Test hub UDP, device bus and bounded storage',
+        'Test production HAP value handling and byte output', 'Test locked hub LAN management frontend'),
+    'S30-V1B BK7231N firmware': ('Build and verify stock-layout native firmware',
+        'Test sanitized S30 business and real HTTP MQTT UDP services', 'Prepare native S30 release assets'),
     'Lightweight release checks': ('Test signed OTA vectors and Flash faults', 'Test OTA release tooling and Worker',
         'Test production TLS transport with real TLS and sanitizers'),
     'Binding and automation host scenarios': ('Test engines, binding runtime and WebUI syntax',
-        'Test TMCP using real SDK workers and an isolated broker', 'Test actual SDK workers against the embedded hub broker'),
+        'Test TMCP using real SDK workers and an isolated broker', 'Test local LAN codec and client lifecycle'),
     'Validate complete test evidence': ('Require all builds and current or reusable tests',),
 }
 

@@ -1,5 +1,7 @@
 # A1 有线安装与恢复
 
+下载时先到[固件与资源下载]({{SITE_URL}}#releases)选择该设备的最新兼容版本，并使用同版本校验清单。文中的固定版本用于可复现的操作示例；明确标出的最低版本、原厂版本和迁移工具条件仍需满足。
+
 适用于使用原装 **EMW3080B / MK3080B** 联网模块的 A1。固件只选择 `A1` 对应文件。需要免拆安装时，见 [A1 原厂 OTA 教程](a1-no-disassembly)。
 
 先阅读[刷机前准备](flash-prep)，断开市电、原电源及负载，烧录期间使用独立稳定的 **3.3V** 电源。刷写前保存本机完整 Flash 备份；完整镜像会覆盖 Bootloader、原固件及部分设置。
@@ -117,7 +119,7 @@ A1 空气净化器烧录：
 python3 emw3080.py flash phicomm_a1.all.bin --model a1 --checksums SHA256SUMS --tool-dir ./3080-tool --engine modern
 ```
 
-如 OpenOCD 不在 PATH，可追加 `--openocd /绝对路径/openocd`。Linux 配置已适配新版 DAP 接口；本教程的 Linux 流程尚未完成实机烧录验证，连接通过并不等于写入和启动已验证。
+如 OpenOCD 不在 PATH，可追加 `--openocd /绝对路径/openocd`。Linux 配置支持新版 DAP 接口，此流程仍为实验性方案。
 
 ### 切分文件与烧录校验
 
@@ -256,7 +258,7 @@ PY
 
 2. 等待设备打印 `Successfully!`，核对 `Size`。
 
-   > 该提示只代表 Bootloader 报告接收/写入完成，**不能据此宣布应用可启动**。
+   > 完成后按下文检查正常启动、配网和设备功能。
 
 3. 输入 `2 -r`，使用串口工具的 **Receive YMODEM** 接收用户分区，保存为 `USER.bin`。回读文件应为整个 `0x40000` 分区，即 **262144 bytes**。
 

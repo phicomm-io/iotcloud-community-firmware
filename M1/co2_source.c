@@ -1,11 +1,6 @@
 #include "m1.h"
-#include "../common/json_build.h"
+#include "../common/typed_wire.h"
 #include <math.h>
-
-static bool source_is_type(json_object *o,enum json_type type)
-{return o && json_object_is_type(o,type);}
-static json_object *source_get(json_object *o,const char *key)
-{return source_is_type(o,json_type_object)?json_object_object_get(o,key):NULL;}
 
 static feature_sample_t remote;
 static uint32_t remote_revision, retired_boot[4];
@@ -28,6 +23,8 @@ void m1_co2_source_sample(const char *id,const feature_sample_t *sample)
     }
     mico_rtos_unlock_mutex(&m1_lock);
 }
+void m1_co2_source_invalidate(const char *id)
+{m1_co2_source_config_t c;m1_co2_source_config_get(&c);if(c.external&&!strcmp(c.device_id,id)){mico_rtos_lock_mutex(&m1_lock);remote.co2_valid=false;mico_rtos_unlock_mutex(&m1_lock);}}
 bool m1_co2_source_value(uint16_t *ppm,uint16_t *ttl)
 {
     m1_co2_source_config_t c;m1_co2_source_config_get(&c);uint32_t now=mico_rtos_get_time(),age=0;bool valid;
@@ -44,34 +41,26 @@ bool m1_co2_source_value(uint16_t *ppm,uint16_t *ttl)
     if(valid)*ttl=(20000-age+999)/1000;
     mico_rtos_unlock_mutex(&m1_lock);return valid;
 }
-json_object *m1_co2_source_json(void)
+static void co2_source_write(ph_writer *w)
 {
     m1_co2_source_config_t c;m1_co2_source_config_get(&c);uint16_t ppm,ttl;bool valid=m1_co2_source_value(&ppm,&ttl);
-    json_object *o=json_object_new_object();
-    json_build_object_add(o,"source",json_object_new_string(c.external?"mqtt":"local"));
-    json_build_object_add(o,"device_id",json_object_new_string(c.device_id));
-    json_build_object_add(o,"double_click",json_object_new_string(c.double_click?"switch_display":"none"));
-    json_build_object_add(o,"revision",json_object_new_int(c.revision));
-    json_build_object_add(o,"valid",json_object_new_boolean(valid));
-    if(valid)json_build_object_add(o,"ppm",json_object_new_int(ppm));
+    phw_begin(w,NULL,false);phw_text(w,"source",c.external?"mqtt":"local");phw_text(w,"device_id",c.device_id);
+    phw_text(w,"double_click",c.double_click?"switch_display":"none");phw_u32(w,"revision",c.revision);phw_bool(w,"valid",valid);if(valid)phw_u32(w,"ppm",ppm);
     mico_rtos_lock_mutex(&m1_lock);bool buttons=m1_state.mcu_button_events;mico_rtos_unlock_mutex(&m1_lock);
-    json_build_object_add(o,"button_events_supported",json_object_new_boolean(buttons));return o;
+    phw_bool(w,"button_events_supported",buttons);phw_end(w);
 }
-json_object *m1_co2_source_set(json_object *p,const char **code)
+bool m1_co2_source_mp(const char *action,const ph_value *p,ph_writer *w,const char **code)
 {
-    *code="invalid_params";if(!source_is_type(p,json_type_object))return NULL;
-    const char *keys[]={"source","device_id","double_click","revision"};
-    json_object_object_foreach(p,key,value){(void)value;bool known=false;for(unsigned i=0;i<4;i++)if(!strcmp(key,keys[i]))known=true;if(!known)return NULL;}
-    for(unsigned i=0;i<3;i++){
-        json_object *v=source_get(p,keys[i]);
-        if(!source_is_type(v,json_type_string) || (size_t)json_object_get_string_len(v)!=strlen(json_object_get_string(v)))return NULL;
+    if(!strcmp(action,"co2_source.get")){
+        *code=phv_keys(p,"")?"ok":"invalid_params";if(!strcmp(*code,"ok"))co2_source_write(w);return true;
     }
-    json_object *rev=source_get(p,"revision");if(!source_is_type(rev,json_type_int)||json_object_get_int64(rev)<0||json_object_get_int64(rev)>INT32_MAX)return NULL;
-    const char *source=json_object_get_string(source_get(p,"source")),*action=json_object_get_string(source_get(p,"double_click"));
-    const char *id=json_object_get_string(source_get(p,"device_id"));
-    if((strcmp(source,"local")&&strcmp(source,"mqtt"))||(strcmp(action,"none")&&strcmp(action,"switch_display")))return NULL;
-    m1_co2_source_config_t c={.magic=M1_CO2_SOURCE_MAGIC,.revision=json_object_get_int(rev),.external=!strcmp(source,"mqtt"),.double_click=!strcmp(action,"switch_display")};
-    if(c.external){if(!m1_display_device_id(id,c.device_id))return NULL;}
-    else if(*id)return NULL;
-    *code=m1_co2_source_config_save(&c);return !strcmp(*code,"accepted")?m1_co2_source_json():NULL;
+    if(strcmp(action,"co2_source.set"))return false;
+    *code="invalid_params";ph_value v;int64_t revision;char source[6],button[16],id[18];
+    if(!phv_keys(p,"|source||device_id||double_click||revision|")||!phv_get(p,"source",&v)||!phv_text(&v,source,sizeof(source))||
+       !phv_get(p,"device_id",&v)||!phv_text(&v,id,sizeof(id))||!phv_get(p,"double_click",&v)||!phv_text(&v,button,sizeof(button))||
+       !phv_get(p,"revision",&v)||!phv_int(&v,&revision)||revision<0||revision>INT32_MAX)return true;
+    if((strcmp(source,"local")&&strcmp(source,"mqtt"))||(strcmp(button,"none")&&strcmp(button,"switch_display")))return true;
+    m1_co2_source_config_t c={.magic=M1_CO2_SOURCE_MAGIC,.revision=(uint32_t)revision,.external=!strcmp(source,"mqtt"),.double_click=!strcmp(button,"switch_display")};
+    if(c.external){if(!m1_display_device_id(id,c.device_id))return true;}else if(*id)return true;
+    *code=m1_co2_source_config_save(&c);if(!strcmp(*code,"accepted"))co2_source_write(w);return true;
 }

@@ -29,6 +29,9 @@ class FrontendPrepareTest(unittest.TestCase):
         (self.bundle / 'devices/daikin').mkdir(parents=True)
         self.original = gzip.compress(b'<html><head></head><body>Original standalone device</body></html>', mtime=0)
         (self.bundle / 'devices/daikin/index.html.gz').write_bytes(self.original)
+        (self.bundle / 'devices/daikin-g3').mkdir(parents=True)
+        self.screen = b'<html><head></head><body>BRY88BBA15G screen editor fixture</body></html>'
+        (self.bundle / 'devices/daikin-g3/index.html.gz').write_bytes(gzip.compress(self.screen, mtime=0))
         (self.bundle / 'hub/device-assets').mkdir(parents=True)
         self.files = {
             'index.html': b'<html>Hub account</html>',
@@ -47,12 +50,12 @@ class FrontendPrepareTest(unittest.TestCase):
         self.release = ModuleType('frontend_release')
         self.release.fetch = lambda path: self.bundle
         self.version = ModuleType('check_version')
-        self.version.resolve_version = lambda path: {'version': 'v-test'}
+        self.version.resolve_version = lambda path: {'version': 'v-test', 'git_commit': 'abcdef0123456789'}
 
     def run_build(self, variant, local=None):
         project = self.root / 'DAIKIN'
         project.mkdir(exist_ok=True)
-        env = BuildEnv(PROJECT_DIR=str(project), PIOENV='bry88ab-hub' if variant == 'hub' else 'bry88ab')
+        env = BuildEnv(PROJECT_DIR=str(project), PIOENV={'hub':'bry88ab-hub','g3':'bry88bba15g','full':'bry88ab'}[variant])
         with patch.dict(sys.modules, {'frontend_release': self.release, 'check_version': self.version}), patch.dict(os.environ):
             if local is None:
                 os.environ.pop('PHICOMM_FRONTEND_SOURCE', None)
@@ -70,12 +73,19 @@ class FrontendPrepareTest(unittest.TestCase):
         self.assertEqual(self.root_bytes(out), self.original)
         self.assertFalse((out / 'hub_web.h').exists())
 
+    def test_g3_uses_its_own_screen_export(self):
+        out = self.run_build('g3')
+        page = gzip.decompress(self.root_bytes(out))
+        self.assertIn(b'BRY88BBA15G screen editor fixture', page)
+        self.assertNotIn(b'Original standalone device', page)
+        self.assertEqual(json.loads((out/'frontend.json').read_text())['product'], 'BRY88BBA15G')
+
     def test_full_local_page_keeps_inline_renderer_and_gzip(self):
         source = self.root / 'source'
         (source / 'common/web').mkdir(parents=True)
         raw = b'<html><head></head><body>Local full inline page</body></html>'
-        (source / 'common/web/page.py').write_text('def render_page(path, *, minify=False):\n assert minify\n return ' + repr(raw) + '\n')
-        with patch('subprocess.check_output', side_effect=lambda cmd, **kwargs: 'fixture\n' if 'rev-parse' in cmd else ''):
+        (source / 'common/web/page.py').write_text('def render_page(path, *, minify=False, screen=True):\n assert minify and not screen\n return ' + repr(raw) + '\n')
+        with patch('subprocess.check_output', side_effect=lambda cmd, **kwargs: ('fixture\n' if 'rev-parse' in cmd else '') if kwargs.get('text') else b''):
             out = self.run_build('full', source)
         self.assertEqual(self.root_bytes(out), gzip.compress(raw, mtime=0))
 
@@ -83,7 +93,7 @@ class FrontendPrepareTest(unittest.TestCase):
         import zopfli.gzip
         out = self.run_build('hub')
         self.assertEqual(gzip.decompress(self.root_bytes(out)), self.files['standalone-daikin.html'])
-        self.assertEqual(self.root_bytes(out), zopfli.gzip.compress(self.files['standalone-daikin.html'], numiterations=15))
+        self.assertEqual(self.root_bytes(out), zopfli.gzip.compress(self.files['standalone-daikin.html'], numiterations=500))
         header = (out / 'hub_web.h').read_text()
         arrays = re.findall(r'static const unsigned char hub_asset_\d+\[\] = \{([\d,]*)\}', header)
         retained = [(name, data) for name, data in sorted(self.files.items()) if name not in ('standalone-daikin.html', 'sw.js', 'config.json')]
@@ -91,7 +101,7 @@ class FrontendPrepareTest(unittest.TestCase):
         for encoded, (name, original) in zip(arrays, retained):
             compressed = bytes(map(int, encoded.split(',')))
             self.assertEqual(gzip.decompress(compressed), original, name)
-            expected = gzip.compress(original, compresslevel=9, mtime=0) if name.endswith('.png') else zopfli.gzip.compress(original, numiterations=15)
+            expected = gzip.compress(original, compresslevel=9, mtime=0) if name.endswith('.png') else zopfli.gzip.compress(original, numiterations=500)
             self.assertEqual(compressed, expected, name)
             self.assertIn('/iotcloud/' + name, header)
         self.assertNotIn('standalone-daikin.html', header)

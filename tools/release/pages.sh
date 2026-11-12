@@ -47,15 +47,38 @@ if [[ "$mode" != build && "${PHICOMM_PAGES_INCLUDE_CANDIDATES:-}" == 1 ]]; then
  python3 tools/release/archive_pages.py "$target/archive" --include-candidates --candidates-r2
 fi
 python3 tools/release/archive_pages.py "$target/archive" --existing
+python3 tools/release/native_pages.py "$target/archive"
 python3 tests/test_site_docs.py
 python3 site/build.py build/pages --archive "$target/archive" --formal
 if [[ "$mode" == build ]]; then
  echo "Built and verified build/pages against actual archived firmware."
  exit 0
 fi
-for entry in .github tools; do
+for entry in .github alpha; do
  if [[ -d "$target/public/$entry" ]]; then cp -a "$target/public/$entry" build/pages/; fi
 done
+# Retained Pages workflows must stage the illustrations generated with the site.
+python3 - <<'PY'
+from pathlib import Path
+workflow = Path('build/pages/.github/workflows/wiki-demo.yml')
+if workflow.is_file():
+ text = workflow.read_text()
+ anchor = '          if [ -d dakin_lvgl ]; then'
+ if 'if [ -d illustrations ]; then' not in text:
+  if anchor not in text:
+   raise ValueError('Pages staging step not found')
+  text = text.replace(anchor, '          if [ -d illustrations ]; then cp -a illustrations "$RUNNER_TEMP/public-site/"; fi\n' + anchor, 1)
+  if "timeout: 1800000" not in text:
+   text = text.replace("        id: deployment", "        with:\n          timeout: 1800000\n        id: deployment")
+  workflow.write_text(text)
+PY
+if [[ -d "$target/public/tools" ]]; then
+ python3 - "$target/public/tools" <<'PY'
+import shutil,sys
+shutil.copytree(sys.argv[1], 'build/pages/tools', dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns('screen-wallpaper'))
+PY
+fi
 # Pages builds IotCloud from its own lock. Publish the same verified frontend
 # as these guides and device demos instead of retaining an older platform UI.
 if [[ -d build/pages/tools ]]; then

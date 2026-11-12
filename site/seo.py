@@ -5,8 +5,8 @@ from xml.etree import ElementTree as ET
 from pages import PAGES, SITE_URL
 
 SITE_TITLE = '斐讯社区固件 · PHICOMM COMMUNITY'
-EN_INDEX_TITLE = 'TC1 / M1 / A1 / DAIKIN community firmware documentation'
-EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, DAIKIN and IoTCloud.'
+EN_INDEX_TITLE = 'TC1 / M1 / A1 / S30M-V1B / DAIKIN G1/G2 / G3 community firmware documentation'
+EN_INDEX_DESCRIPTION = 'Open-source firmware for discontinued IoT devices or devices whose cloud service providers have ended support. Guides for TC1, M1, A1, S30M-V1B, DAIKIN G1/G2 and G3, and IoTCloud.'
 PRODUCT_TITLES = {
     'm1-mcu-update': '斐讯 M1 主控 MCU 网络升级教程（免拆机）',
     'tc1-guide': '斐讯 TC1 智能排插功能与操作',
@@ -17,7 +17,9 @@ PRODUCT_TITLES = {
     'm1-no-disassembly': '斐讯 M1 原厂配网与免拆刷机：局域网 OTA / DNS 迁移',
     'a1-no-disassembly': '斐讯 A1 原厂配网与免拆刷机：局域网 OTA / DNS 迁移',
     'm1-guide': '斐讯 M1 空气检测仪功能与操作',
-    'daikin-guide': 'DAIKIN BRY88AX151K 空气检测仪功能与安装',
+    'daikin-guide': '大金空气质量检测（1/2代）功能与安装',
+    'daikin-g3-guide': '大金空气质量检测（3代）屏幕、字库与升级',
+    'daikin-g3-flash': '大金 G3 刷机教程：ESP32 免拆与串口、屏幕 WebUI 与 J-Link',
     'a1-guide': '斐讯 A1 空气净化器功能与操作',
     'a1-flash': '斐讯 A1 有线刷机：免焊 J-Link 与串口恢复',
     'm1-flash': '斐讯 M1 有线刷机：串口 Bootloader 与 J-Link 恢复',

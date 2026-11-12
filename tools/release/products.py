@@ -3,18 +3,23 @@
 import argparse
 
 STEMS = {'tc1': 'phicomm_tc1_a1', 'm1': 'phicomm_m1', 'a1': 'phicomm_a1',
-         'daikin': 'daikin_BRY88AX151K'}
+         'daikin': 'daikin_BRY88AX151K', 'bry88bba15g': 'daikin_BRY88BBA15G'}
 MODEL_VARIANTS = {
     'tc1': ('full', 'no-frontend-resources'),
     'm1': ('full', 'no-frontend-resources'),
     'a1': ('full', 'no-frontend-resources', 'fresh-air', 'fresh-air-no-frontend-resources'),
     'daikin': ('full', 'hub'),
+    'bry88bba15g': ('full',),
 }
 VARIANTS = tuple(dict.fromkeys(v for variants in MODEL_VARIANTS.values() for v in variants))
 
 
 def variants_for(model, tag=None):
     """The frozen 0.x archive predates the independent DAIKIN hub image."""
+    if model == 'bry88bba15g' and tag:
+        from release_version import parse_tag
+        if parse_tag(tag).key < parse_tag('v1.0.0-rc.6').key:
+            return ()
     variants = MODEL_VARIANTS[model]
     return ('full',) if model == 'daikin' and tag and tag.startswith('v0.') else variants
 

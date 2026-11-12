@@ -1,4 +1,6 @@
 #pragma once
+#include <stddef.h>
+#include "../common/local_auth.h"
 #include "a1.h"
 #include "fresh_air.h"
 #include "../common/automation.h"
@@ -18,7 +20,30 @@ typedef struct {
     bemfa_config_t bemfa;
     fresh_config_t fresh_air; /* Tagged append-only extension; retained by ordinary A1. */
     a1_filter_stock_t filter_stock; /* v10: after all v9 fields, including fresh-air. */
+} a1_storage_v10_t;
+
+/* Preserve the complete old object, including trailing padding. New records
+ * begin after its sizeof; the anonymous view retains existing member access. */
+typedef struct {
+    union {
+        a1_storage_v10_t frozen_prefix;
+        struct {
+            a1_config_t base;
+            feature_config_storage_t features;
+            automation_storage_t automation;
+            a1_filter_storage_t filter;
+            automation_action_t combination_buttons[34];
+            feature_auto_config_t automatic;
+            feature_co2_config_t co2;
+            bemfa_config_t bemfa;
+            fresh_config_t fresh_air; /* Tagged append-only extension; retained by ordinary A1. */
+            a1_filter_stock_t filter_stock; /* v10: after all v9 fields, including fresh-air. */
+        };
+    };
+    ph_auth_store local_auth;
 } app_storage_t;
+typedef char a1_auth_trailer_offset_check[
+    offsetof(app_storage_t,local_auth)==sizeof(a1_storage_v10_t) ? 1 : -1];
 
 /* Only replace the previous default power toggle, never a custom action.
  * Empty hold slots get power-off defaults; explicit hold mappings survive. */

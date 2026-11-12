@@ -11,7 +11,7 @@ class HapCharacteristics(unittest.TestCase):
     def test_rejected_values_never_reach_service_updates(self):
         source = (ROOT / 'DAIKIN/lib/HomeSpan/src/HomeSpan.cpp').read_text()
         methods = []
-        for signature in ('int Span::updateCharacteristics(',
+        for signature in ('int Span::countCharacteristics(', 'int Span::updateCharacteristics(',
                           'StatusCode SpanCharacteristic::loadUpdate('):
             methods.append(signature + source.split(signature, 1)[1].split(
                 '\n///////////////////////////////', 1)[0])

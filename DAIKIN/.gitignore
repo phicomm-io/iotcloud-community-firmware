@@ -1,3 +1,5 @@
 .pio/
 generated/
 __pycache__/
+sdkconfig.*
+!sdkconfig.defaults

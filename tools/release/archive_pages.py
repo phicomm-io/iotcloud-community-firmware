@@ -16,8 +16,11 @@ except ModuleNotFoundError:
     from release_version import parse_tag, parse_version
 
 
+from device_manifest import document, encoded, verify_manifests
+
+
 def write_latest(catalog, output):
-    """Small device manifests: follow stable, and expose signed images only."""
+    """Small device manifests: follow stable and select each model's OTA image."""
     stable = catalog.get('stable')
     release = next((r for r in catalog['releases'] if r['tag'] == stable), None)
     if stable and release is None:
@@ -35,7 +38,7 @@ def write_latest(catalog, output):
         if bridge.get('version') != '1.0.0' or bridge.get('prerelease') or bridge.get('channel', 'stable') != 'stable':
             raise ValueError('v1.0.0 bridge must be a stable release')
     for channel, selected in [('legacy', bridge), ('v1', release if version >= (1, 0, 0) else None)]:
-        for model, supported in MODEL_VARIANTS.items():
+        for model, supported in {**MODEL_VARIANTS, 's30': ('full',)}.items():
             item = selected.get('models', {}).get(model, {}) if selected else {}
             variants = dict(item.get('variants', {}))
             # Remove stale manifests too when rolling back to an older catalog.
@@ -46,18 +49,36 @@ def write_latest(catalog, output):
                 target = folder / 'latest.json'
                 if channel == 'legacy' and variant == 'hub':
                     target.unlink(missing_ok=True)
+                    target.with_suffix('.msgpack').unlink(missing_ok=True)
                     continue
-                signed = entry.get('downloads', {}).get('signed')
-                if not signed:
+                image = entry.get('downloads', {}).get('rbl' if model == 's30' else 'signed')
+                if not image or (model == 's30' and channel == 'legacy'):
                     target.unlink(missing_ok=True)
+                    target.with_suffix('.msgpack').unlink(missing_ok=True)
                     continue
-                document = dict(schema=1, tag=selected['tag'], version=selected['version'],
-                                commit=selected['commit'], model=model, firmware_variant=variant,
-                                **signed, release_log=selected['notes'])
-                data = (json.dumps(document, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
-                if len(data) > 4096: raise ValueError('Device manifest exceeds 4096 bytes')
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
+                for format, data in encoded(document(selected, model, variant, entry)).items():
+                    path = target.with_suffix('.' + format)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data)
+
+
+def write_candidate_latest(candidates, output):
+    """Candidate pointers are isolated and never touch stable manifests."""
+    from release_version import version_key
+    selected = max(candidates, key=lambda r: version_key(r['tag'])) if candidates else None
+    for model, supported in {**MODEL_VARIANTS, 's30': ('full',)}.items():
+        original = selected.get('models', {}).get(model, {}) if selected else {}
+        for variant in supported:
+            entry = original if variant == 'full' else original.get('variants', {}).get(variant, {})
+            folder = Path(output) / 'ota/candidate' / model / variant
+            if ('rbl' if model == 's30' else 'signed') not in entry.get('downloads', {}):
+                for extension in ('json', 'msgpack'):
+                    (folder / ('latest.' + extension)).unlink(missing_ok=True)
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            for extension, data in encoded(document(selected, model, variant, entry)).items():
+                (folder / ('latest.' + extension)).write_bytes(data)
+
 
 def mirror(source, output, include_candidates=False, candidate_fetch=None):
     output = Path(output)
@@ -96,6 +117,12 @@ def mirror(source, output, include_candidates=False, candidate_fetch=None):
             for entry in [model, *model.get('variants', {}).values()]:
                 for value in entry['downloads'].values():
                     assets[value['path']] = value
+        for pair in release.get('device_manifests', {}).values():
+            for value in pair.values(): assets[value['path']] = value
+        for kind in ('firmware','font','bootstrap','migration'):
+            if kind in release.get('screen',{}):
+                value=release['screen'][kind];assets[value['path']]=value
+        manifest_bodies = {}
         for path, value in assets.items():
             validate_path(path)
             if release in candidates and not path.startswith(f"/releases/{release['tag']}/"):
@@ -106,8 +133,10 @@ def mirror(source, output, include_candidates=False, candidate_fetch=None):
                 data = fetch_release(path)
             if len(data) != value['size'] or hashlib.sha256(data).hexdigest() != value['sha256']:
                 raise ValueError(f'Firmware checksum mismatch: {path}')
+            manifest_bodies[path] = data
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+        verify_manifests(release, manifest_bodies.__getitem__)
         for path in (release['notes'], f"/releases/{release['tag']}/SHA256SUMS"):
             validate_path(path)
             if release in candidates and not path.startswith(f"/releases/{release['tag']}/"):
@@ -125,6 +154,7 @@ def mirror(source, output, include_candidates=False, candidate_fetch=None):
             candidate_target.write_bytes(candidate_bytes)
         else:
             candidate_target.unlink(missing_ok=True)
+        write_candidate_latest(candidates, output)
     print(f"Archived {len(catalog['releases'])} stable/archive and {len(candidates)} candidate releases with verified firmware hashes")
 
 

@@ -51,7 +51,8 @@ typedef struct {
 enum {
     PH_MQTT_CAUSE_UNKNOWN, PH_MQTT_CAUSE_SDK, PH_MQTT_CAUSE_HEAP_ADMISSION,
     PH_MQTT_CAUSE_RX_FRAMING, PH_MQTT_CAUSE_RECEIPT_EXHAUSTED,
-    PH_MQTT_CAUSE_READ, PH_MQTT_CAUSE_WRITE, PH_MQTT_CAUSE_RESOURCE_EXPIRED
+    PH_MQTT_CAUSE_READ, PH_MQTT_CAUSE_WRITE, PH_MQTT_CAUSE_RESOURCE_EXPIRED,
+    PH_MQTT_CAUSE_ALLOCATION
 };
 typedef struct {
     uint32_t reason, operation, free_bytes, packet_bytes, credit_bytes, queue_bytes, rx_state;
@@ -110,6 +111,8 @@ void ph_mqtt_protocol_end(ph_mqtt_core *);
 bool ph_mqtt_enqueue(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool);
 bool ph_mqtt_enqueue_route(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool, unsigned);
 bool ph_mqtt_enqueue_generation(ph_mqtt_core *, unsigned, const void *, size_t, const void *, size_t, unsigned, bool, unsigned, uint32_t);
+/* Owner rollback of a new subscription: only queued input for this route. */
+void ph_mqtt_discard_route(ph_mqtt_core *, unsigned);
 ph_mqtt_item *ph_mqtt_pop(ph_mqtt_core *, unsigned);
 void ph_mqtt_item_release(ph_mqtt_core *, ph_mqtt_item *);
 /* Single owner credit; no allocation, and never a substitute for checking an

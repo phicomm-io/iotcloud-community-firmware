@@ -1,5 +1,6 @@
 #include "../common/watchdog.h"
 #include "m1.h"
+#include "../common/service_mp.h"
 #include "indicator.h"
 #include <time.h>
 
@@ -130,6 +131,112 @@ static bool reset_frame(reset_receipt_t *receipt,const uint8_t frame[20])
     return true;
 }
 
+/* Only the UART worker owns this transaction. A successful write is not
+ * confirmation: query the RTC after settling, then compare the readback. */
+static struct {
+    bool active, waiting, query_pending, paused;
+    unsigned attempts;
+    uint32_t next;
+} screen_clock;
+
+static bool screen_clock_local(time_t *local)
+{
+    mico_utc_time_ms_t utc;
+    if (mico_time_get_utc_time_ms(&utc) != kNoErr || utc / 1000 < 1577836800u) return false;
+    m1_config_t cfg;
+    m1_config_get(&cfg);
+    *local = (time_t)(utc / 1000) + cfg.timezone_minutes * 60;
+    return true;
+}
+
+static bool screen_clock_ready(void)
+{
+    mico_rtos_lock_mutex(&m1_lock);
+    bool ready = m1_state.ntp_synced && !m1_state.mcu_updating &&
+        !m1_state.ota_active && !m1_state.reboot_pending;
+    mico_rtos_unlock_mutex(&m1_lock);
+    return ready;
+}
+
+static void screen_clock_retry(uint32_t now)
+{
+    screen_clock.waiting = screen_clock.query_pending = false;
+    if (screen_clock.attempts >= 3) {
+        screen_clock.active = false;
+        custom_log("M1 clock", "MCU time unconfirmed after 3 attempts");
+    } else screen_clock.next = now + 1000u;
+}
+
+static void screen_clock_sync(uint32_t now, bool force)
+{
+    if (force) {
+        memset(&screen_clock, 0, sizeof(screen_clock));
+        screen_clock.active = true;
+        screen_clock.next = now;
+    }
+    if (!screen_clock.active) return;
+    if (!screen_clock_ready()) {
+        screen_clock.paused = true;
+        return;
+    }
+    if (screen_clock.paused) {
+        screen_clock.paused = false;
+        screen_clock_retry(now);
+        return;
+    }
+    if ((int32_t)(now - screen_clock.next) < 0) return;
+    if (screen_clock.waiting) { screen_clock_retry(now); return; }
+    if (screen_clock.query_pending) {
+        uint8_t query[12] = {0x23, 0x0d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21};
+        screen_clock.query_pending = false;
+        if (!transmit(query)) { screen_clock_retry(now); return; }
+        screen_clock.waiting = true;
+        screen_clock.next = now + 2000u;
+        return;
+    }
+    screen_clock.attempts++;
+    time_t local;
+    struct tm t;
+    if (!screen_clock_local(&local) || !gmtime_r(&local, &t) ||
+        t.tm_year < 120 || t.tm_year > 199) { screen_clock_retry(now); return; }
+    uint8_t frame[12];
+    m1_clock_frame(frame, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                   t.tm_hour, t.tm_min, t.tm_sec);
+    if (!transmit(frame)) { screen_clock_retry(now); return; }
+    screen_clock.query_pending = true;
+    screen_clock.next = now + 250u;
+}
+
+static bool screen_clock_rx(const uint8_t *frame, uint32_t now)
+{
+    if (frame[1] != 0x0c && frame[1] != 0x0d) return false;
+    /* Passive broadcasts are not replies to our query. */
+    if (frame[1] != 0x0d || !screen_clock.active || !screen_clock.waiting ||
+        !screen_clock_ready()) return true;
+    if ((int32_t)(now - screen_clock.next) >= 0) {
+        screen_clock_retry(now);
+        return true;
+    }
+    time_t local;
+    if (!screen_clock_local(&local)) { screen_clock_retry(now); return true; }
+    /* Compare civil dates, including rollover, without changing libc timezone.
+     * Allow RTC tick/transport skew of two seconds; invalid dates never match. */
+    for (int skew = -2; skew <= 2; skew++) {
+        time_t candidate = local + skew;
+        struct tm t;
+        if (!gmtime_r(&candidate, &t)) continue;
+        if (((unsigned)frame[2] * 256u + frame[3]) == (unsigned)t.tm_year + 1900u &&
+            frame[4] == t.tm_mon + 1 && frame[5] == t.tm_mday &&
+            frame[6] == t.tm_hour && frame[7] == t.tm_min && frame[8] == t.tm_sec) {
+            screen_clock.active = screen_clock.waiting = false;
+            custom_log("M1 clock", "MCU time confirmed after %u attempt(s)", screen_clock.attempts);
+            return true;
+        }
+    }
+    screen_clock_retry(now);
+    return true;
+}
+
 /* Outside the FIFO: retry persisted configuration even under queue pressure.
  * Successful send is not acknowledgement from the stock controller. */
 static void alarm_sync(void)
@@ -218,6 +325,7 @@ static void uart_worker(mico_thread_arg_t arg)
         uint32_t now = mico_rtos_get_time();
         m1_mcu_tick();
         mico_rtos_lock_mutex(&m1_lock);bool mcu_updating=m1_state.mcu_updating;mico_rtos_unlock_mutex(&m1_lock);
+        screen_clock_sync(now, false);
         if (!mcu_updating && (int32_t)(now - next_query) >= 0) {
             m1_query_frame(frame); transmit(frame); next_query = now + M1_POLL_MS;
         }
@@ -278,6 +386,9 @@ static void uart_worker(mico_thread_arg_t arg)
                     m1_state.brightness_requested = command.level;
                     mico_rtos_unlock_mutex(&m1_lock);
                 }
+            } else if (command.kind == 3) {
+                /* A queued timestamp can age while the MCU is updating. */
+                screen_clock_sync(now, true);
             } else transmit(command.frame);
         }
         /* Bounded receive work: noise cannot starve queries or queued commands. */
@@ -285,9 +396,13 @@ static void uart_worker(mico_thread_arg_t arg)
             uint8_t byte;
             if (MicoUartRecv(MICO_UART_1, &byte, 1, i ? 0 : 10) != kNoErr) break;
             if (!m1_decode_byte(&decoder, byte, frame)) continue;
-            if(frame[1]==0x17){version_attempts=0;next_version=mico_rtos_get_time();}
+            if(frame[1]==0x17){
+                version_attempts=0;next_version=mico_rtos_get_time();
+                screen_clock_sync(next_version, true);
+            }
             if(m1_button_rx(frame))continue;
             if(m1_mcu_rx(frame))continue;
+            if(screen_clock_rx(frame, mico_rtos_get_time()))continue;
             if(reset_frame(&reset_receipt,frame))continue;
             mico_rtos_lock_mutex(&m1_lock);
             memcpy(m1_state.last_frame, frame, 20);
@@ -301,6 +416,7 @@ static void uart_worker(mico_thread_arg_t arg)
                 } else m1_state.unknown_frames++;
             }
             mico_rtos_unlock_mutex(&m1_lock);
+            service_cache_changed(SERVICE_CACHE_STATUS);
         }
         m1_config_get(&cfg);
         mico_rtos_lock_mutex(&m1_lock);

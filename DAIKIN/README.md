@@ -1,6 +1,6 @@
 # DAIKIN BRY88AX151K 空气检测仪通用固件
 
-为 DAIKIN BRY88AX151K 的 ESP32 / 4MB Flash 板构建通用固件（已测试 BRY88AB151K 接线），复用本项目锁定的离线前端公共组件、设置页及 HTTP 命令封装。PM2005 / PM2105 使用**同一个镜像**，按收到的 I²C 帧格式识别；甲醛模块运行时自动探测，无需构建开关。未验证 BRY88AA151K 的 ADC TVOC 和引脚差异，不能将它作为该型号的已验证固件。
+为 DAIKIN BRY88AX151K 的 ESP32 / 4MB Flash 板构建通用固件（已测试 BRY88AB151K 接线），复用本项目锁定的离线前端公共组件、设置页及 HTTP 命令封装。PM2005 / PM2105 使用**同一个镜像**，按收到的 I²C 帧格式识别；甲醛模块运行时自动探测，无需构建开关。`BRY88AX151K` 是 `BRY88AA151K / BRY88AB151K` 的统配名称；本次真机测试和原厂串口备份来自 BRY88AB151K。
 
 硬件资料参考 [daikin-air-sensor](https://github.com/louliangsheng/daikin-air-sensor/tree/9519f2916563a4f2d1718b2f0db825169192af82)，包括 UART/I²C 引脚和模块协议。这里重新实现驱动与网络服务，不依赖 ESPHome，也不复制上游第三方头文件。
 
@@ -48,6 +48,16 @@ GPIO25 独立指示系统状态，不受空气质量指示灯总开关影响：�
 
 `config.set` 的 `section` 为 `indicator_rules`，`values` 包含 `pm_source`（`pm25` 或 `pm10`）、三个必需数组 `co2`、`tvoc`、`pm` 和可选数组 `formaldehyde`。数组最多两项，空数组禁用该项目；每项结构为 `{"threshold":1000,"op":"gt","mode":"on"}`，`op` 支持 `gt/gte/lt/lte`，`mode` 支持 `on/off/fast/slow`。阈值必须是有限非负数，上限分别为 10000 ppm、65535 ppb、10000 µg/m³、5 mg/m³，同项不能重复阈值。设置接口、查询和 MQTT 状态使用同一份规则；`indicator_modes` 返回三颗测量灯的当前方式，`system_indicator` 返回系统灯状态。
 
+## 电源策略与 SDK 构建
+
+G3 将 Arduino 2.0.17 作为 ESP-IDF 4.4.7 组件构建，SDK 参数来自 `sdkconfig.defaults`。预编译 Arduino SDK 未启用 PM，单独添加应用宏不能开启动态调频和自动轻睡眠。G1/G2 保留预编译 Arduino SDK。
+
+`CMakeLists.txt` 为 G3 移植有界的轻睡眠 tick 补偿修复，避免实机出现的 `vTaskStepTick` 断言。修复只作用于构建目录的 SDK 源码副本，并校验原始源码摘要。
+
+G1/G2 原厂 SensorKit2 的 `esp_clk_init` 在 `0x400d1f2e` 选择 240 MHz；社区普通版和 Hub 版保持该频率。G3 原厂使用 10–80 MHz 与自动轻睡眠，社区按该配置运行，通过 GPIO2 唤醒输入和 UART APB 锁协调屏幕通信。Wi-Fi 使用最小 modem sleep。串口时钟、屏幕 MCU 空闲等待及验证接口见 [G3 开发资料](../docs/public/daikin-g3-development.md#电源与-ota-调度)。
+
+G3 的项目名称保留 `arduino-lib-builder`，保持已安装固件检查的 OTA 应用描述；目标与变体描述继续固定在原偏移，分区布局保持原样。Hub 保留已有 LTO 构建，以容纳完整前端及原厂 OTA 余量。
+
 ## 构建与安装
 
 安装 PlatformIO Core 后执行：
@@ -77,6 +87,10 @@ python3 -m esptool --chip esp32 --port PORT write_flash 0 build/daikin-release/d
 ## 接口与联动
 
 `POST /api/v1/command` 使用 `{request_id?,action,params}` / `{request_id?,code,message,data}`，写请求需非空 request_id。支持 status/config/capabilities 查询、设备名称、网页密码、Wi-Fi/MQTT 设置、Wi-Fi 扫描、指示灯、重启与恢复出厂。最近八个写请求在本次启动中去重。串口 115200 也接受每行一个相同 JSON 请求，可用于本地诊断和配网；不会回显密码。
+
+Hub 变体的 `/iotcloud/` 管理页与设备设置共用 WebUI 管理密码和会话：未设置密码时直接访问且不创建登录会话；设置后支持 `admin` Basic 与 32 位十六进制 Bearer。`/api/auth/login`、`/api/auth/logout` 是同一鉴权的别名，Hub 不再有独立账户或密码。升级保留原 `hub.username` 路由命名空间、设备、转发、配对与 HomeKit 配置；首次使用自动建立 `admin` 命名空间。UDP 配对和外部 MQTT broker 认证继续独立生效。
+
+Hub 已注册、已配对并确认当前 IP 的设备可通过 `POST /api/hub/devices/<12位小写MAC>/command` 读取或控制，HTTP 请求和响应均为 MessagePack：`{action,params,request_id}` → `{code,data,request_id}`。原始业务请求经 UDP v4 转发，`status.get` 与 `capabilities.get` 返回设备完整响应；中枢本机也可使用同一接口。一次仅等待一个 HTTP 命令，其余请求返回 `busy`；等待上限 12 秒。排队、发送及返回结果前重新核验 WebUI 会话。写操作超时后先读取状态再决定下一次操作；写请求 ID 在 120 秒内禁止重新提交，读取状态不会挤掉写入记录。中枢最多同时保留 128 条有效写记录，满额时在执行前返回 `busy`，过期后回收。
 
 通过账号内 MQTT 的 `sensor/<mac>/command` 授权、UDP 11288 读取及五秒周期共享 MQTT 测量，为 A1 提供 LAN 优先、MQTT 备用的数据。会话仅在 RAM 保存；授权本身不显示已连接，实际读取后才显示在线状态。
 

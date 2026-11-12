@@ -32,6 +32,7 @@ static void *jsonReallocate(void *pointer,size_t size){
 #include <cassert>
 #include <cstdio>
 #include <memory>
+#include "local_auth.h"
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -53,6 +54,8 @@ struct String:std::string {
   size_t write(uint8_t c){return write(&c,1);}
   size_t write(const uint8_t *p,size_t n){n=std::min(n,stringWriteLimit>size()?stringWriteLimit-size():size_t(0));append(reinterpret_cast<const char *>(p),n);return n;}
 };
+
+#include "wire_mp.h"
 namespace ArduinoJson {
 template<> struct Converter<String> {
   static String fromJson(JsonVariantConst value){return value.as<std::string>();}
@@ -76,11 +79,31 @@ struct Prefs {
   bool fail=false,clearFail=false;
   unsigned writes=0,clears=0;
   std::string persisted;
-  size_t putBytes(const char *,const char *p,size_t n){++writes;if(fail)return 0;persisted.assign(p,n);return n;}
+  bool isKey(const char*){return !persisted.empty();}
+  size_t getBytesLength(const char*){return persisted.size();}
+  size_t getBytes(const char*,void*p,size_t n){if(n>persisted.size())return 0;memcpy(p,persisted.data(),n);return n;}
+  size_t putBytes(const char *,const void *raw,size_t n){const char *p=static_cast<const char*>(raw);++writes;if(fail)return 0;persisted.assign(p,n);return n;}
   bool clear(){++clears;if(clearFail)return false;persisted.clear();return true;}
 };
 static Prefs prefs;
+static bool localAuthReady=false;static ph_auth_state localAuth;static ph_auth_store loadedAuthStore;
+static char webPassword[33]="device-password";static int authMux;
+#define portENTER_CRITICAL(mux) (void)(mux)
+#define portEXIT_CRITICAL(mux) (void)(mux)
+using SemaphoreHandle_t=void*;static SemaphoreHandle_t localAuthMutex;
+#define portMAX_DELAY 1
+static void*xSemaphoreCreateMutex(){return nullptr;}static void xSemaphoreTake(void*,int){}static void xSemaphoreGive(void*){}
+static void esp_fill_random(void*,size_t){}
+static String loadLegacyConfigText(){return "{}";}
+struct nvs_stats_t{size_t total_entries=10000,free_entries=10000;};
+static const int ESP_OK=0;static int nvs_get_stats(const char*,nvs_stats_t*s){*s=nvs_stats_t();return ESP_OK;}
+#include "../../src/auth_storage.inc"
 #include "save.inc"
+static bool lc_peer(const char*p){return p&&strlen(p)==12;}
+static bool lanPairStart(const char*,const char*,const char*,unsigned,const char**){return false;}
+static bool lanPairStatus(const char*,JsonObject){return false;}
+static bool lanUnpairStart(const char*,const char**){return false;}
+struct IPAddress{bool fromString(const char*){return true;}};
 static iotcloud::HubService hubService(config);
 static iotcloud::HubTransport hubTransport;
 static iotcloud::HubRelay hubRelay(config,hubService,hubTransport.broker);
@@ -148,24 +171,25 @@ static unsigned requestSlot=0;
 // Run the production HTTP handler too: delay() dispatches its queued operation
 // as loop() would. Authentication itself is covered by the OTA handler suite.
 using esp_err_t=int;
-static constexpr int ESP_OK=0,ESP_FAIL=-1,HTTP_GET=0,HTTP_POST=1;
+static constexpr int ESP_FAIL=-1,HTTP_GET=0,HTTP_POST=1;
 using std::min;
 struct httpd_req_t {
   int method=HTTP_GET,content_len=0;
   size_t offset=0;
   std::string input,status="200 OK",type,body,cache;
 };
-static int authMux=0,webMux=0;
-static char webPassword[33]="device-password";
+static int webMux=0;
+
 static bool webPending=false,webDone=true;
 static void httpd_resp_set_hdr(httpd_req_t *req,const char *key,const char *value){if(!strcmp(key,"Cache-Control"))req->cache=value;}
 static void httpd_resp_set_status(httpd_req_t *req,const char *status){req->status=status;}
 static void httpd_resp_set_type(httpd_req_t *req,const char *type){req->type=type;}
-static esp_err_t httpd_resp_send(httpd_req_t *req,const char *body,size_t length){req->body.assign(body?body:"",length);return ESP_OK;}
+static esp_err_t httpd_resp_send(httpd_req_t *req,const char *body,size_t length){req->body.assign(body?body:"",length);if(length&&uint8_t(body[0])>=0x80&&uint8_t(body[0])<=0x8f){StaticJsonDocument<768> doc;assert(!deserializeMsgPack(doc,body,length));req->body.clear();serializeJson(doc,req->body);}return ESP_OK;}
 static int httpd_req_recv(httpd_req_t *req,char *out,int size){size_t n=std::min(size_t(size),req->input.size()-req->offset);memcpy(out,req->input.data()+req->offset,n);req->offset+=n;return int(n);}
 static bool authorized(httpd_req_t *){return true;}
 static void delay(unsigned n){now+=n;if(webPending&&!webDone){webResult=backupExecute();webPending=false;webDone=true;}}
 #include "json-response.inc"
+static bool captureWebAuthorization(httpd_req_t *req){return authorized(req);}
 #include "backup-handler.inc"
 
 static void normalMemory(){
@@ -217,6 +241,7 @@ static void assertLive(const std::string &token,int fd){
   assert(sessions[0].used&&mqttQueued&&mqttReceiving&&mqtt&&bemfaMqtt);
   uint8_t byte;assert(::recv(fd,&byte,1,MSG_DONTWAIT)<0);
 }
+static void assertRecovery(){assert(configRecovery&&!hubReady()&&device_local_auth()==nullptr);assert(!rebootAt);}
 static void assertQuiesced(const std::string &token,int fd){
   assert(hubRestartPending()&&!hubReady()&&!hubTransport.running());
   assert(hubTransport.broker.count()==0&&hubTransport.broker.retainedCount()==0);
@@ -235,10 +260,11 @@ static void assertQuiesced(const std::string &token,int fd){
   hubHttpToken=token;hubApiExecute();assert(hubHttpStatus==503&&hubHttpToken.empty());
   unsigned writes=prefs.writes;
   DynamicJsonDocument next(configCapacity);next.set(config);assert(!saveConfig(next)&&prefs.writes==writes);
-  assert(execute(R"({"request_id":"after","action":"config.set","params":{"section":"device","values":{"name":"rewrite"}}})").find("restart_required")!=String::npos);
+  assert(execute(R"({"request_id":"after","action":"config.set","params":{"section":"device","values":{"name":"rewrite"}}})",false).find("restart_required")!=String::npos);
   assert(prefs.writes==writes&&backupExecute().find("restart_required")!=String::npos);
 }
 int main(int argc,char **argv){
+  (void)initLocalAuth;
   assert(argc==4);
   std::string scenario=argv[1];
   hubService.randomHex=[](size_t n){uint8_t bytes[32];assert(n<=sizeof bytes&&RAND_bytes(bytes,n)==1);return hex(bytes,n);};
@@ -314,7 +340,7 @@ int main(int argc,char **argv){
     if(scenario=="mqtt-local"){
       const std::string topic=hubService.prefix()+"daikin/aabbccddeeff/command";
       hubTransport.broker.event=[&](const std::string &t,const std::string &body,bool,iotcloud::HubBroker::Origin origin){
-        if(t==topic&&origin==iotcloud::HubBroker::Origin::Local)result=execute(body);
+        if(t==topic&&origin==iotcloud::HubBroker::Origin::Local)result=execute(body,false);
       };
       std::vector<uint8_t> body;text(body,topic);body.insert(body.end(),request.begin(),request.end());
       std::vector<uint8_t> packet={0x30};size_t length=body.size();
@@ -323,10 +349,10 @@ int main(int argc,char **argv){
       assert(::send(fd,packet.data(),packet.size(),0)==int(packet.size()));
       for(unsigned i=0;i<100&&result.empty();++i)pollHub(++now);
       assert(!result.empty());
-    }else result=execute(request);
+    }else result=execute(request,false);
     if(prefs.fail){
       assert(result.find("storage_error")!=String::npos&&prefs.persisted==before);
-      assertLive(login.token,fd);assert(!hubReload&&!mqttRestart&&hubEpoch==0);
+      assertRecovery();assert(!hubReload&&!mqttRestart&&hubEpoch==0);
     }else{
       assert(result.find("accepted")!=String::npos&&config["mqtt"]["host"]=="new-broker.example");
       assert(!mqtt&&!mqttConnected&&!mqttQueued&&!mqttReceiving&&!mqttReceived&&!mqttPending[0]);
@@ -340,10 +366,10 @@ int main(int argc,char **argv){
       for(const auto &message:hubMessages)assert(!message);
     }
   }else if(scenario=="reset"||scenario=="reset-fail"){
-    prefs.clearFail=scenario=="reset-fail";
-    auto result=execute(R"({"request_id":"reset","action":"system.reset","params":{"full":true}})");
-    if(prefs.clearFail){assert(result.find("storage_error")!=String::npos);assert(!prefs.persisted.empty());assertLive(login.token,fd);assert(!rebootAt);}
-    else{assert(result.find("accepted")!=String::npos);assert(prefs.persisted.empty());assertQuiesced(login.token,fd);assert(rebootAt);}
+    prefs.fail=prefs.clearFail=scenario=="reset-fail";
+    auto result=execute(R"({"request_id":"reset","action":"system.reset","params":{"full":true}})",false);
+    if(prefs.clearFail){assert(result.find("storage_error")!=String::npos);assert(!prefs.persisted.empty());assertRecovery();assert(!rebootAt);}
+    else{assert(result.find("accepted")!=String::npos);assert(loadAuthConfigText()=="{\"_version\":1}");assertQuiesced(login.token,fd);assert(rebootAt);}
   }else{
     DynamicJsonDocument backup(configCapacity+1024);
     backup["schema"]=1;backup["model"]="daikin";backup["variant"]="hub";backup["config_version"]=1;backup["config"]=config;
@@ -351,9 +377,9 @@ int main(int argc,char **argv){
     assert(validConfig(backup["config"]));serializeJson(backup,webBody);
     if(scenario=="restore-fail"){
       auto before=prefs.persisted;prefs.fail=true;
-      assert(backupExecute().find("storage_error")!=String::npos);assert(prefs.persisted==before);assertLive(login.token,fd);assert(!rebootAt);
+      assert(backupExecute().find("storage_error")!=String::npos);assert(prefs.persisted==before);assertRecovery();assert(!rebootAt);
       prefs.fail=false;backup["variant"]="full";webBody="";serializeJson(backup,webBody);
-      assert(backupExecute().find("invalid_backup")!=String::npos);assertLive(login.token,fd);assert(!rebootAt);
+      assert(backupExecute().find("migration_required")!=String::npos);assertRecovery();assert(!rebootAt);
     }else{
       assert(backupExecute().find("accepted")!=String::npos);
       assert(hubService.user()==(scenario=="same"?"oldowner":"newowner"));assertQuiesced(login.token,fd);assert(rebootAt);

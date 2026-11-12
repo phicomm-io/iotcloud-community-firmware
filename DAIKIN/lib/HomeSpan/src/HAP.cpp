@@ -1031,10 +1031,10 @@ int HAPClient::putPrepareURL(char *json){
   uint64_t pid=0;
    
   if((cBuf=strstr(json,ttlToken)))
-    sscanf(cBuf+strlen(ttlToken),"%u",&ttl);
+    IOTCLOUD_HAP_SCAN(cBuf+strlen(ttlToken),"%u",&ttl);
 
   if((cBuf=strstr(json,pidToken)))
-    sscanf(cBuf+strlen(ttlToken),"%llu",&pid);
+    IOTCLOUD_HAP_SCAN(cBuf+strlen(ttlToken),"%llu",&pid);
 
   StatusCode status=StatusCode::OK;
 

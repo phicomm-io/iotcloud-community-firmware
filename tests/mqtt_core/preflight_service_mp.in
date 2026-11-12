@@ -1,0 +1,120 @@
+static size_t preflight_memory(void)
+{
+    return pressure_receipt && ph_mqtt_debug_core()->credit==PH_MQTT_RECEIPT_BYTES ? 16416 : 0;
+}
+
+static ph_mqtt_diagnostics preflight_snapshot(void);
+static ph_mqtt_diagnostics preflight_snapshot(void)
+{ph_mqtt_diagnostics d;ph_mqtt_snapshot(&d);return d;}
+
+static void receipt_pressure(bool cancel,bool expire,bool rename)
+{
+    pressure_receipt=false;pressure_inject=false;heap_capacity=64000;
+    assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    start_service_client();
+    char target[512];snprintf(target,sizeof(target),"%s/result",account.base);
+    ph_buf *request=request_mp("fan.set","deferred-receipt",1);unsigned ran=mutations;
+    ph_buf *same=request_mp("fan.set","deferred-receipt",1);
+    ph_buf *different=request_mp("fan.set","deferred-receipt",0);
+    size_t prior_result=result_count;pressure_inject=true;uint32_t began=now_ms;
+    assert(command_mp(request)==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);began=now_ms;
+    assert(mutations==ran+1&&result_count==prior_result&&ph_mqtt_receipt_pending());
+    ph_mqtt_diagnostics waiting=preflight_snapshot();
+    assert(!waiting.inflight[PH_MQTT_COMMAND]&&waiting.credit==PH_MQTT_RECEIPT_BYTES);
+    service_memory_state_t memory;service_memory_snapshot(&memory);
+    assert(!memory.active&&!memory.reserved);
+    if(rename)strcpy(account.base,"new-namespace");
+    incoming_bytes(command_topic,same->buf,same->len,51);
+    incoming_bytes(command_topic,different->buf,different->len,52);
+    pressure_inject=false;pressure_receipt=false;
+    assert(ph_mqtt_yield(&client,1)==MQTT_SUCCESS);
+    assert(preflight_snapshot().queued[PH_MQTT_COMMAND]==2&&mutations==ran+1);
+    size_t live=native_live;unsigned allocations=native_allocs;
+    for(unsigned i=0;i<20;i++){
+        pressure_receipt=true;
+        now_ms+=10;assert(ph_mqtt_poll(&client)==PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED);
+        pressure_receipt=false;
+        assert(native_live==live&&native_allocs==allocations&&mutations==ran+1);
+    }
+    pressure_inject=false;pressure_receipt=false;
+    if(cancel){ph_mqtt_pending_clear();assert(!ph_mqtt_receipt_pending()&&!preflight_snapshot().credit);}
+    else if(expire){pressure_receipt=true;now_ms=began+30000;assert(ph_mqtt_poll(&client)==MQTT_FAILURE);pressure_receipt=false;
+        assert(preflight_snapshot().failure.reason==PH_MQTT_CAUSE_RESOURCE_EXPIRED);
+        assert(!ph_mqtt_receipt_pending()&&!preflight_snapshot().credit);}
+    else{
+        now_ms=began+1000;assert(ph_mqtt_poll(&client)==MQTT_SUCCESS);
+        assert(mutations==ran+1&&result_count==prior_result+1);
+        assert(!strcmp(last_result_topic,target)&&!strcmp(last_result_code,"accepted"));
+        assert(!ph_mqtt_receipt_pending()&&!preflight_snapshot().credit);
+        assert(ph_mqtt_poll(&client)==MQTT_SUCCESS&&mutations==ran+1);
+        assert(!strcmp(last_result_code,"accepted"));
+        assert(ph_mqtt_poll(&client)==MQTT_SUCCESS&&mutations==ran+1);
+        assert(!strcmp(last_result_code,"conflict"));
+    }
+    ph_buf_free(request);ph_buf_free(same);ph_buf_free(different);
+    finish_service_client();
+    assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    start_service_client();request=request_mp("fan.set","deferred-receipt",1);
+    assert(command_mp(request)==MQTT_SUCCESS&&mutations==ran+1);
+    ph_buf_free(request);finish_service_client();clear_receipts();assert(!native_live&&!charged_live);
+}
+
+static bool stop_receipt,stop_done,stop_seen;
+static uint32_t stop_began;static bool stop_pending_seen;
+static unsigned stop_mutations;
+static unsigned stop_results;
+static int stop_prepare(void *context,ph_mqtt_connection *spec)
+{
+    (void)context;rx_at=rx_size=tx_size=0;
+    *spec=(ph_mqtt_connection){&account,"broker","user","password","device",
+        "tx/availability",1883,50,NULL,"test","full"};return 1;
+}
+static bool stop_subscription(void *context,unsigned i,ph_mqtt_subscription *spec)
+{
+    (void)context;if(i)return false;*spec=(ph_mqtt_subscription){command_topic,QOS1,handler};return true;
+}
+static int stop_initial(void *context)
+{
+    (void)context;ph_buf *request=request_mp("fan.set","stop-receipt",1);
+    incoming_bytes(command_topic,request->buf,request->len,61);ph_buf_free(request);return MQTT_SUCCESS;
+}
+static int stop_cycle(void *context){(void)context;return MQTT_SUCCESS;}
+static bool stop_requested(void *context)
+{
+    (void)context;
+    if(ph_mqtt_receipt_pending()){
+        if(!stop_pending_seen){stop_pending_seen=true;stop_began=now_ms;}
+        if((uint32_t)(now_ms-stop_began)>=100)return true;
+    }
+    return stop_done;
+}
+static void stop_closing(void *context,bool connected,int rc)
+{
+    (void)context;assert(connected&&mutations==stop_mutations+1);
+    assert(rc==MQTT_SUCCESS&&!ph_mqtt_receipt_pending()&&!preflight_snapshot().credit);
+    assert(result_count==stop_results);stop_seen=true;stop_done=true;
+}
+static void stopped_receipt(void)
+{
+    pressure_receipt=false;pressure_inject=true;stop_done=stop_seen=stop_pending_seen=false;stop_began=0;
+    assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    stop_mutations=mutations;stop_results=result_count;
+    ph_mqtt_session_hooks hooks={NULL,stop_prepare,stop_subscription,stop_initial,
+        stop_cycle,stop_closing,NULL,stop_requested,NULL,NULL};
+    ph_mqtt_session_run(&client,&hooks);
+    assert(stop_seen&&stop_began&&mutations==stop_mutations+1);
+    pressure_inject=false;pressure_receipt=false;clear_receipts();assert(!native_live&&!charged_live);
+}
+
+int main(void)
+{
+    service_init();assert(mqtt_account_init(&account,1,"a1","test","aabbccddeeff"));
+    assert(ph_mqtt_owner_init(&account,8192,&thread,accept));now_ms=UINT32_MAX-500;
+    receipt_pressure(false,false,true);
+    receipt_pressure(true,false,false);
+    receipt_pressure(false,true,false);
+    stopped_receipt();
+    ph_mqtt_owner_end();
+    puts("native service preflight receipt: owned pressure, replay/conflict, cancel/expiry/rename/stop cleanup PASS");
+    return 0;
+}

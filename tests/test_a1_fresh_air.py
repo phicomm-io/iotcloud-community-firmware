@@ -1,17 +1,19 @@
 """Exercise the production accessory controller and command codec with fake GPIO."""
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
+from tests.mp_fixture_vectors import header
 ROOT=Path(__file__).resolve().parents[1]
 class FreshAirTest(unittest.TestCase):
  def test_controller(self):
   harness=r'''
 #include "A1/a1.h"
 #include "A1/storage.h"
-#include "common/config_json.c"
+#include "common/config_mp.inc"
+#include "common/service_mp.h"
+void service_cache_changed(unsigned mask){(void)mask;}
 #define MICO_GPIO_9 9
 #define MICO_GPIO_10 10
 #define MICO_GPIO_19 19
@@ -42,7 +44,22 @@ bool feature_fresh_values(unsigned stat,unsigned metrics,float v[4],float *co2){
 CODECS
 STORAGE
 #include "A1/fresh_air.c"
-static const char *cmd(const char *action,const char *body){json_object *p=json_tokener_parse(body);const char *code;json_object *o=fresh_command(action,p,&code);if(o)json_object_put(o);json_object_put(p);return code;}
+/* Human-readable vectors are encoded by Python before C compilation. */
+#include "mp_fixture_vectors.inc"
+static const char *cmd_value(const char *action,const ph_value *p){
+ ph_writer writer;const char *code;assert(phw_init(&writer,PH_WIRE_MSGPACK));
+ assert(fresh_mp(action,p,&writer,&code));ph_buf *result=phw_take(&writer);assert(result);ph_buf_free(result);return code;
+}
+static const char *cmd(const char *action,const char *body){
+ for(unsigned i=0;i<sizeof(fixture_vectors)/sizeof(*fixture_vectors);i++)if(!strcmp(body,fixture_vectors[i].text)){
+  ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,fixture_vectors[i].bytes,fixture_vectors[i].length,&p));return cmd_value(action,&p);
+ }
+ assert(!"missing constant MP vector");return NULL;
+}
+static const char *independent_coupling(void){
+ ph_writer w;assert(phw_init(&w,PH_WIRE_MSGPACK));phw_begin(&w,NULL,false);phw_int(&w,"revision",storage.fresh_air.revision);phw_int(&w,"coupling",2);phw_end(&w);
+ ph_buf *b=phw_take(&w);assert(b);ph_value p;assert(phv_parse(PH_WIRE_MSGPACK,b->buf,b->len,&p));const char *code=cmd_value("fresh_air.config.set",&p);ph_buf_free(b);return code;
+}
 static void tick(bool master,unsigned desired){unsigned next;now+=100;fresh_prepare(master,desired,primary,now,&next);primary=next;fresh_finish(primary,now);}
 int main(void){
  fresh_defaults(&storage.fresh_air);assert(storage.fresh_air.mapping.coupling==2);storage.fresh_air.mapping.coupling=0;fresh_boot();fresh_init();assert(measured_duty==0 && edge);
@@ -84,8 +101,7 @@ int main(void){
  sensor_valid=true;ppm=2000;primary=100;current.applied=50;published.reason=2;
  controller.initialized=true;controller.integral=70;controller.last_ms=now-5000;control_at=now-5000;
  tick(true,0);assert(controller.integral==70 && current.applied==50);
- char independent[80];snprintf(independent,sizeof(independent),"{\"revision\":%u,\"coupling\":2}",storage.fresh_air.revision);
- assert(!strcmp(cmd("fresh_air.config.set",independent),"accepted"));
+ assert(!strcmp(independent_coupling(),"accepted"));
  assert(!strcmp(cmd("fresh_air.set","{\"mode\":\"manual\",\"speed\":100}"),"accepted"));
  for(unsigned i=0;i<15;i++)tick(true,0);assert(primary==0 && current.applied==100);
  tick(false,0);assert(!primary && !current.applied);
@@ -94,12 +110,14 @@ int main(void){
  puts("Fresh controller: commands, revision, mapping, sensor fallback, feedback, shutdown: PASS");
 }
 '''
-  runtime=(ROOT/'common/runtime.c').read_text();codecs=runtime[runtime.index('json_object *feature_fresh_encode('):runtime.rindex('#endif')]
+  runtime=(ROOT/'common/runtime.c').read_text();codecs=runtime[runtime.index('#include "fresh_config_mp.inc"'):runtime.rindex('#endif')]
   main=(ROOT/'A1/main.c').read_text();storage=main[main.index('void fresh_config_get('):main.rindex('#endif')]
   harness=harness.replace('CODECS',codecs).replace('STORAGE',storage)
   with tempfile.TemporaryDirectory() as temp:
-   temp=Path(temp);j=temp/'json';shutil.copytree(ROOT/'build/a1-sdk/mico-os/libraries/utilities/json_c',j)
-   for p in j.glob('*.c'):p.write_text(p.read_text().replace('%ld','%d'))
+   temp=Path(temp)
+   (temp/'mp_fixture_vectors.inc').write_text(header([harness],{}))
    source=temp/'test.c';source.write_text(harness);out=temp/'test'
-   subprocess.run(['cc','-std=gnu99','-ffunction-sections','-Wl,--gc-sections','-DA1_FRESH_AIR','-DFEATURE_DEVICE_A1','-I'+str(ROOT),'-I'+str(ROOT/'A1'),'-I'+str(ROOT/'tests/host'),'-I'+str(j),str(source),str(ROOT/'A1/fresh_air_defaults.c'),str(ROOT/'common/engine.c'),*map(str,j.glob('*.c')),'-lm','-o',str(out)],check=True)
+   command=['cc','-std=gnu99','-ffunction-sections','-Wl,--gc-sections','-DA1_FRESH_AIR','-DFEATURE_DEVICE_A1','-I'+str(ROOT),'-I'+str(ROOT/'A1'),'-I'+str(ROOT/'common'),'-I'+str(ROOT/'tests/host'),'-I'+str(temp),str(source),str(ROOT/'A1/fresh_air_defaults.c'),str(ROOT/'common/engine.c'),str(ROOT/'common/typed_wire.c'),str(ROOT/'common/wire_buffer.c'),'-lm','-o',str(out)]
+   if os.environ.get('SANITIZE')=='1':command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie']
+   subprocess.run(command,check=True)
    subprocess.run([out],check=True)

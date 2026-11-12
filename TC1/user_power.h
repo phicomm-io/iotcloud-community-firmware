@@ -29,6 +29,9 @@ typedef struct { float watts; uint32_t age_ms; bool valid; } tc1_power_sample_t;
 void PowerSampleRead(tc1_power_sample_t *out);
 /* MQTT owner: invalidate before a new session; only a new IRQ sample restores freshness. */
 void PowerSampleInvalidate(void);
+/* Local CF counter window, independent of MQTT session freshness. One worker
+ * reads at 1 Hz; a five-interval average includes genuine zero-pulse load. */
+bool PowerLocalSampleRead(uint32_t *milliwatts);
 void PowerInit(void);
 void SetPowerRecord(PowerRecord* pr, uint32_t pw);
 

@@ -6,8 +6,8 @@
 #include <cstdio>
 #include <string>
 // Exercise the pinned ArduinoJson implementation with an actual allocation
-// ceiling, including its NoMemory result. Other C++/broker allocations are not
-// capped here; they are covered by the byte-memory broker suite.
+// ceiling, including its NoMemory result. Other C++/bus allocations are not
+// capped here; they are covered by the byte-memory bus suite.
 static size_t jsonLimit=SIZE_MAX,jsonAttempts=0,jsonDenied=0,jsonLargest=0;
 static size_t jsonLive=0,jsonPeak=0;
 static void *homeJsonAllocate(size_t n){
@@ -39,20 +39,19 @@ static void memoryTests(){
   using Home=iotcloud::HubHome;
   DynamicJsonDocument saved(1024);
   assert(!deserializeJson(saved,R"([{"mac":"112233445566","model":"m1"},{"mac":"aabbccddeeff","model":"tc1"}])"));
-  iotcloud::HubBroker broker;Home home(broker);
-  broker.authorize=[](const std::string &,bool){return true;};
+  iotcloud::HubDeviceBus bus;Home home(bus);
   unsigned serial=0;
   home.randomHex=[&](size_t n){auto s=std::to_string(++serial);return std::string(n*2-s.size(),'0')+s;};
   assert(home.configure(saved.as<JsonArrayConst>(),"lab/","aabbcc000001"));
   std::string command;
-  broker.event=[&](const std::string &,const std::string &body,bool,iotcloud::HubBroker::Origin){command=body;};
+  bus.dispatch=[&](const std::string &,const std::string &body,bool,iotcloud::HubDeviceBus::Origin){command=body;return true;};
   auto observe=[&](const std::string &topic,const std::string &body,size_t ceiling){
     const auto live=jsonLive;jsonLimit=ceiling;jsonAttempts=jsonDenied=jsonLargest=0;jsonPeak=live;
     home.observe(topic,body);jsonLimit=SIZE_MAX;
     assert(jsonLive==live&&jsonPeak<=live+1); // Retries never retain old pools.
   };
   const auto sensor=home.devices[1].base,control=home.devices[2].base;
-  const std::string m1=R"({"model":"m1","device_id":"112233445566","sensor_valid":true,"age_ms":1200,"climate_valid":true,"pm25_valid":true,"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})";
+  const std::string m1=R"({"model":"m1","device_id":"112233445566","sensor_valid":true,"age_ms":1200,"sensor_health":{"climate_valid":true,"pm25_valid":true},"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})";
   home.tick(50000);observe(sensor+"/state",m1,2548);
   const auto &device=home.devices[1];
   assert(device.reachable(50000)&&device.values[Home::Temperature].number==25.5&&device.values[Home::Temperature].fresh(50000));
@@ -91,13 +90,10 @@ int main() {
   DynamicJsonDocument saved(2048);
   assert(!deserializeJson(saved,
       R"([{"mac":"aabbccddeeff","model":"tc1"},{"mac":"112233445566","model":"m1"},{"mac":"a1a2a3a4a5a6","model":"a1"}])"));
-  iotcloud::HubBroker broker;
-  iotcloud::HubHome home(broker);
+  iotcloud::HubDeviceBus bus;
+  iotcloud::HubHome home(bus);
   using Home = iotcloud::HubHome;
   const std::string prefix = "phicomm/v2/u_6c6f63616c/";
-  broker.authorize = [&](const std::string &topic, bool) {
-    return topic.compare(0, prefix.size(), prefix) == 0;
-  };
   unsigned serial = 0;
   home.randomHex = [&](size_t n) {
     auto s = std::to_string(++serial);
@@ -107,11 +103,12 @@ int main() {
   assert(home.size == 4 && home.devices[1].aid != home.devices[2].aid);
   auto aid = home.devices[1].aid;
   std::string topic, body;
-  broker.event = [&](const std::string &t, const std::string &b, bool retain,
-                     iotcloud::HubBroker::Origin) {
+  bus.dispatch = [&](const std::string &t, const std::string &b, bool retain,
+                     iotcloud::HubDeviceBus::Origin) {
     assert(!retain);
     topic = t;
     body = b;
+    return true;
   };
   home.tick(100);
   assert(!home.begin(1, Home::Outlet, 0, 1));
@@ -163,13 +160,13 @@ int main() {
   home.tick(50000);
   const auto sensor = home.devices[2].base;
   home.observe(sensor + "/state",
-      R"({"model":"m1","sensor_valid":true,"age_ms":1200,"climate_valid":true,"pm25_valid":true,"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})");
+      R"({"model":"m1","sensor_valid":true,"age_ms":1200,"sensor_health":{"climate_valid":true,"pm25_valid":true},"temperature":25.5,"humidity":43,"pm25":12,"scd40":{"valid":true,"co2_ppm":720,"age_ms":500}})");
   assert(home.devices[2].values[Home::Temperature].fresh(68000));
   assert(!home.devices[2].values[Home::Temperature].fresh(69000));
   assert(home.devices[2].values[Home::CO2].number == 720);
   assert(!home.begin(2, Home::FanOn, 0, 1));
   home.observe(sensor + "/state",
-      R"({"sensor_valid":false,"age_ms":21000,"climate_valid":false,"pm25_valid":false,"temperature":0,"humidity":0,"pm25":0})");
+      R"({"sensor_valid":false,"age_ms":21000,"sensor_health":{"climate_valid":false,"pm25_valid":false},"temperature":0,"humidity":0,"pm25":0})");
   assert(!home.devices[2].values[Home::Temperature].valid &&
          !home.devices[2].values[Home::CO2].valid);
   const auto daikin = home.devices[0].base;
@@ -266,5 +263,16 @@ int main() {
   assert(!home.devices[1].reachable(40000));
   assert(home.configure(saved.as<JsonArrayConst>(), prefix, "aabbcc000001") &&
          home.devices[1].aid == aid && !home.devices[1].seen);
+  // A discovered MP device follows exactly the same acknowledged-control
+  // contract, including an allocation-free MP confirmation status query.
+  DynamicJsonDocument advertisement(2048),binaryState(1024);
+  advertisement["schema"]=2;advertisement["protocol"]="tmcp";advertisement["protocol_version"]=2;advertisement["version"]="v2";advertisement["model"]="tc1";advertisement["device_id"]="aabbccddeeff";advertisement["firmware_version"]="1.0-rc.4";advertisement["variant"]="standard";advertisement["wire_version"]=1;advertisement["default_wire_format"]="msgpack";advertisement.createNestedArray("wire_formats").add("msgpack");
+  std::string packed;serializeMsgPack(advertisement,packed);iotcloud::hubWire.observe(prefix+"discovery/aabbccddeeff",packed);assert(iotcloud::hubWire.binary(base));
+  assert(!deserializeJson(binaryState,off));packed.clear();serializeMsgPack(binaryState,packed);home.tick(100);home.observe(base+"/state",packed);assert(home.begin(1,Home::Outlet,0,1));
+  assert(!deserializeMsgPack(cmd,body)&&cmd["action"]=="outlet.set"&&cmd["params"]["index"]==0&&cmd["params"]["on"]==true);
+  binaryState.clear();binaryState["request_id"]=cmd["request_id"];binaryState["code"]="accepted";packed.clear();serializeMsgPack(binaryState,packed);home.observe(base+"/result",packed);
+  assert(!deserializeMsgPack(cmd,body)&&cmd["action"]=="status.get"&&cmd["params"].is<JsonObject>()&&cmd["params"].size()==0);
+  home.observe(base+"/state",on);assert(!home.finished());
+  assert(!deserializeJson(binaryState,on));packed.clear();serializeMsgPack(binaryState,packed);home.observe(base+"/state",packed);assert(home.finished()&&home.finish());
   puts("hub home bridge model tests passed");
 }

@@ -14,20 +14,24 @@ root = project.parent
 sys.path.insert(0, str(root / 'tools/release'))
 from products import asset_stem
 variant = os.environ.get('PHICOMM_FIRMWARE_VARIANT', 'full')
-stem = asset_stem('daikin', variant)
-out = root / ('build/daikin-release' if variant == 'full' else 'build/daikin-hub-release')
+g3 = variant == 'g3'
+model = 'bry88bba15g' if g3 else 'daikin'
+build_variant = variant
+variant = 'full' if g3 else variant
+stem = asset_stem(model, variant)
+out = root / ('build/daikin-g3-release' if g3 else 'build/daikin-release' if variant == 'full' else 'build/daikin-hub-release')
 out.mkdir(parents=True, exist_ok=True)
 for pattern in ('daikin-*.bin', 'phicomm_daikin*.bin', stem + '*.bin'):
     for stale in out.glob(pattern): stale.unlink()
 core = Path(os.environ.get('PLATFORMIO_CORE_DIR', Path.home() / '.platformio'))
 tool = core / 'packages/tool-esptoolpy/esptool.py'
 framework = core / 'packages/framework-arduinoespressif32'
-manifest = {'hardware_model':'BRY88AX151K','flash_size':4194304,'factory_offset':0,'firmware_variant':variant,'variants':{}}
+manifest = {'hardware_model':'BRY88BBA15G' if g3 else 'BRY88AX151K','flash_size':8388608 if g3 else 4194304,'factory_offset':0,'firmware_variant':variant,'variants':{}}
 for sensor_variant in ('auto',):
-    name = 'bry88ab-hub' if variant == 'hub' else 'bry88ab'
+    name = 'bry88bba15g' if g3 else 'bry88ab-hub' if variant == 'hub' else 'bry88ab'
     build = project / '.pio/build' / name
     app = (build / 'firmware.bin').read_bytes()
-    target = b'BRY88AB151K'.ljust(32,b'\0')
+    target = (b'BRY88BBA15G' if g3 else b'BRY88AB151K').ljust(32,b'\0')
     if (len(app) < 352 or app[0] != 0xe9 or
             struct.unpack_from('<I', app, 32)[0] != 0xabcd5432 or app[288:320] != target):
         raise RuntimeError('Missing or misplaced OTA model descriptor: ' + name)
@@ -39,7 +43,7 @@ for sensor_variant in ('auto',):
     shutil.copyfile(build / 'firmware.bin', application)
     factory = out / (stem + '.all.bin')
     subprocess.run([sys.executable,str(tool),'--chip','esp32','merge_bin',
-        '--flash_mode','dio','--flash_freq','40m','--flash_size','4MB','-o',str(factory),
+        '--flash_mode','dio','--flash_freq','40m','--flash_size','8MB' if g3 else '4MB','-o',str(factory),
         '0x1000',str(build/'bootloader.bin'),'0x8000',str(build/'partitions.bin'),
         '0xe000',str(framework/'tools/partitions/boot_app0.bin'),
         '0x10000',str(application)],check=True)

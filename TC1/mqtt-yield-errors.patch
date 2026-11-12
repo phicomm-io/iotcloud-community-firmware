@@ -1,0 +1,12 @@
+diff --git a/libraries/protocols/mqtt/MQTTClient.c b/libraries/protocols/mqtt/MQTTClient.c
+--- a/libraries/protocols/mqtt/MQTTClient.c
++++ b/libraries/protocols/mqtt/MQTTClient.c
+@@ -533,7 +533,7 @@
+ 
+   InitTimer(&timer);
+   countdown_ms(&timer, timeout_ms);
+-  if (cycle(c, &timer) == MQTT_FAILURE)
++  if (cycle(c, &timer) < 0)
+   {
+     rc = MQTT_FAILURE;
+   }

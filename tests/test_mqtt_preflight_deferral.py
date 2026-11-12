@@ -60,25 +60,27 @@ int main(void){
         fixture=r'''#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #define MQTT_SUCCESS 0
 static struct {unsigned mode;} account={1};
-static bool cleanup_pending;
-static unsigned discovery_index,state_index,publication_cursor,snapshot_at;
+static bool cleanup_pending,power_sensor_metadata,power_sensor_started,power_report_started;
+static unsigned discovery_index,state_index,publication_cursor;
 static unsigned invalidations;
 static void PowerSampleInvalidate(void){invalidations++;}
 static int synchronous_error,cap_rc;
-static uint32_t mico_rtos_get_time(void){return 100;}
-static int service_sender(const char*t,const char*b,bool r){(void)t;(void)b;(void)r;return 0;}
-static int service_mqtt_capabilities(int(*s)(const char*,const char*,bool),void*a){
+static int service_sender(const char*t,const void*b,size_t n,bool r){(void)t;(void)b;(void)n;(void)r;return 0;}
+static int service_mqtt_capabilities(int(*s)(const char*,const void*,size_t,bool),void*a){
  (void)s;(void)a;
  /* A retryable first capability send must already have installed all cursors. */
  assert(cleanup_pending&&!discovery_index&&!state_index&&!publication_cursor&&!synchronous_error);
- assert((uint32_t)(100-snapshot_at)==5000);return cap_rc;
+ assert(!power_sensor_metadata&&!power_sensor_started&&!power_report_started);
+ return cap_rc;
 }
 /* BODY */
 int main(void){
  for(cap_rc=0;cap_rc<=3;cap_rc++){
   cleanup_pending=false;discovery_index=state_index=publication_cursor=9;synchronous_error=-1;
+  power_sensor_metadata=power_sensor_started=power_report_started=true;
   assert(session_initial(0)==cap_rc);
   assert(invalidations==(unsigned)cap_rc+1);
  }

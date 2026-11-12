@@ -5,12 +5,14 @@
 #include <stdio.h>
 #include <string.h>
 #include "common/mqtt_account.h"
+#include "common/mqtt/publication.h"
+#include "tests/sensor_mp_fixture.h"
 
 #define MQTT_SUCCESS 0
 #define PH_MQTT_MORE 2
 #define PH_MQTT_RECONFIGURE 1
 #define kNoErr 0
-typedef int (*sender_t)(const char *,const char *,bool);
+typedef int (*sender_t)(const char *,const void *,size_t,bool);
 typedef struct { unsigned revision,speed;bool fan_on; } a1_config_t;
 typedef struct { bool wifi_connected,led_visible; } mqtt_state_t;
 typedef struct { unsigned n; } a1_filter_storage_t;
@@ -32,6 +34,8 @@ static unsigned feature_revision=1,count,discovery_index=12;
 static unsigned state_index,state_pending=127,state_seen,revision,old_speed;
 static a1_filter_storage_t sent_filter;
 static char base[1],feature_filters[1];
+static ph_mqtt_publication native_publication;
+static int snapshot_result;
 
 static void mico_rtos_lock_mutex(unsigned *lock) { assert(lock==&a1_lock && !locked);locked=1;++lock_calls; }
 static void mico_rtos_unlock_mutex(unsigned *lock) { assert(lock==&a1_lock && locked);locked=0; }
@@ -50,10 +54,12 @@ static void feature_effective_fan(bool requested_on,unsigned requested_speed,boo
     *on=effective_on;*speed=effective_speed;
 }
 #endif
-static int publish(const char *topic,const char *body,bool retain) {
-    assert(!retain && strlen(topic)<192 && strlen(body)<320 && !locked);++attempts;
+static int publish_bytes(const char *topic,const void *body,size_t n,bool retained) {
+    assert(strlen(topic)<192 && n<512 && !locked);
+    if(retained){assert(fixture_sensor_output(topic,body,n,true,"fan_speed_percent","Fan speed","%",0));return 0;}
+    ++attempts;fixture_sensor_output(topic,body,n,false,"fan_speed_percent","Fan speed","%",send_result);
     if(send_result)return send_result;
-    ++sends;printf("PUB\t%d\t%s\t%s\n",retain,topic,body);return MQTT_SUCCESS;
+    ++sends;return 0;
 }
 static void ota_job_poll(void) {}
 static int ota_service(const char *b) { assert(b==base);return MQTT_SUCCESS; }
@@ -68,17 +74,24 @@ static uint32_t feature_config_revision(void) { return cfg.revision; }
 static bool feature_mqtt_filters_current(void *filters,unsigned n) { assert(filters==feature_filters && n==count);return true; }
 static void feature_mqtt_session(const mqtt_account_t *a) { assert(a==&account); }
 static int service_mqtt_capabilities(sender_t sender,const mqtt_account_t *a) {
-    assert(sender==publish && a==&account);++capabilities;return MQTT_SUCCESS;
+    assert(sender==publish_bytes && a==&account);++capabilities;
+    memset(&native_publication,0,sizeof(native_publication));return MQTT_SUCCESS;
 }
 static int feature_mqtt_service(sender_t sender,bool connected) {
-    assert(sender==publish);if(connected)++features;return MQTT_SUCCESS;
+    assert(sender==publish_bytes);if(connected)++features;return MQTT_SUCCESS;
 }
 static void a1_filter_get(a1_filter_storage_t *filter) { filter->n=0; }
 static bool a1_filter_mqtt_due(const a1_filter_storage_t *a,const a1_filter_storage_t *b,uint32_t now,uint32_t at) {
     (void)a;(void)b;(void)now;(void)at;return false;
 }
 static int service_mqtt_snapshot(sender_t sender,const mqtt_account_t *a) {
-    assert(sender==publish && a==&account);++snapshots;return MQTT_SUCCESS;
+    assert(sender==publish_bytes && a==&account);++snapshots;
+    ph_mqtt_publication_attempt(&native_publication,now_ms);
+    if(!snapshot_result)ph_mqtt_publication_complete(&native_publication,now_ms);
+    return snapshot_result;
+}
+static bool service_mqtt_status_due(bool changed) {
+    return ph_mqtt_publication_due(&native_publication,now_ms,5000,1000,changed);
 }
 static int discovery(const a1_config_t *c,unsigned i) { assert(c==&current && i<12);return discovery_result; }
 static int states(const a1_config_t *c,const mqtt_state_t *s,unsigned i) {
@@ -86,7 +99,20 @@ static int states(const a1_config_t *c,const mqtt_state_t *s,unsigned i) {
 }
 #include "production.inc"
 
-static void account_set(const char *user) { assert(mqtt_account_init(&account,1,"a1",user,"AABBCCDDEEFF")); }
+static bool prime_metadata=true;
+static void account_set(const char *user) {
+ assert(mqtt_account_init(&account,1,"a1",user,"AABBCCDDEEFF"));
+ /* Explicit successful retained descriptor phase; the assertions below retain
+  * their original state-only cadence/IRQ scope. Reconnect re-sends metadata. */
+ if(prime_metadata && !fan_sensor_metadata){
+  bool handled;
+  if(fan_sensor_turn)assert(!fan_sensor_cycle(true,0,&handled)&&!handled);
+  assert(!fan_sensor_cycle(true,0,&handled)&&handled);
+  assert(fixture_metadata);
+  assert(!fan_sensor_cycle(true,0,&handled)&&!handled);
+  fan_sensor_started=false;
+ }
+}
 static void cycle(void) { assert(session_cycle(NULL)==send_result); }
 static void next_feed(void) { now_ms+=5000;assert(!session_cycle(NULL));assert(!session_cycle(NULL)); }
 static void set_on(bool on) { effective_on=on;cfg.fan_on=on; }
@@ -118,23 +144,24 @@ static void reconnect(void) {
     account_set("next/owner");next_feed();assert(sends==2 && random_calls==1);
 }
 static void counters(void) {
-    account_set("test");fan_sensor_boot=UINT32_MAX;fan_sensor_sequence=UINT32_MAX-1;
+    fan_sensor_boot=UINT32_MAX;fan_sensor_sequence=UINT32_MAX-1;account_set("test");
     cycle();next_feed();assert(sends==2 && !random_calls && fan_sensor_sequence==1);
 }
 static void backoff(void) {
     account_set("test");send_result=PH_MQTT_MORE;cycle();assert(attempts==1 && !sends);
     for(now_ms=0;now_ms<1000;now_ms++)assert(!session_cycle(NULL));
-    send_result=0;cycle();assert(attempts==2 && sends==1 && fan_sensor_sequence==2);
+    send_result=0;cycle();assert(attempts==2 && sends==1 && fan_sensor_sequence==1);
     for(now_ms=1001;now_ms<6000;now_ms++)assert(!session_cycle(NULL));
     assert(attempts==2);cycle();assert(attempts==3 && sends==2);
     now_ms+=6000;send_result=-7;assert(!session_cycle(NULL));cycle();assert(attempts==4);
 }
 static void failures(void) {
-    account_set("test");random_failure=true;cycle();assert(!sends && random_calls==1);
+    prime_metadata=false;account_set("test");random_failure=true;cycle();assert(!sends && random_calls==1);
     for(now_ms=0;now_ms<1000;now_ms++)assert(!session_cycle(NULL));
     random_failure=false;random_value=0;cycle();assert(!sends && random_calls==2);
     now_ms+=1000;assert(!session_cycle(NULL));random_value=UINT32_MAX;cycle();
-    assert(sends==1 && random_calls==3 && fan_sensor_sequence==1);
+    assert(!sends && random_calls==3 && fan_sensor_metadata);
+    cycle();cycle();assert(sends==1 && fan_sensor_sequence==1);
 }
 static void gates(void) {
     account_set("test");wifi=false;assert(session_cycle(NULL)==PH_MQTT_RECONFIGURE && !attempts);
@@ -147,9 +174,29 @@ static void fairness(void) {
     account_set("test");native_result=PH_MQTT_MORE;
     for(unsigned i=0;i<60;i++) {
         now_ms+=6000;state_pending=127;
-        assert(session_cycle(NULL)==(i%2?PH_MQTT_MORE:MQTT_SUCCESS));
+        int rc=session_cycle(NULL);assert(rc==MQTT_SUCCESS||rc==PH_MQTT_MORE);
     }
-    assert(sends==30 && normal==30 && features==30 && !snapshots);
+    assert(sends==30 && normal==15 && features==30 && snapshots==15);
+}
+static void independent(void) {
+    account_set("test");
+    /* A native success cannot acknowledge any of HA's seven initial leaves. */
+    fan_sensor_turn=true;filter_turn=false;state_index=state_seen=0;state_pending=127;sent=false;
+    revision=cfg.revision;old_on=true;old_speed=37;old_visible=false;
+    assert(!session_cycle(NULL));assert(snapshots==1&&!state_seen&&state_pending==127&&!sent);
+    for(unsigned i=0;i<8;i++)assert(!session_cycle(NULL));
+    assert(sent&&state_seen==127);
+    /* Continuous HA/filter updates must leave native heartbeats and retries
+     * progressing. A deferred native publish retains its own deadline. */
+    now_ms=5000;snapshot_result=PH_MQTT_MORE;filter_turn=false;fan_sensor_turn=true;
+    assert(session_cycle(NULL)==PH_MQTT_MORE);assert(snapshots==2);
+    for(unsigned i=0;i<1000;i++){now_ms=5000+i;assert(!session_cycle(NULL));}
+    assert(snapshots==2);now_ms=6000;snapshot_result=0;
+    for(unsigned i=0;i<4;i++)assert(!session_cycle(NULL));
+    assert(snapshots==3&&native_publication.sent_at==6000);
+    now_ms=11000;state_pending=127;
+    for(unsigned i=0;i<4;i++)assert(!session_cycle(NULL));
+    assert(snapshots==4);
 }
 static void bounds(void) {
     char user[MQTT_USER_MAX+1];memset(user,'u',MQTT_USER_MAX);user[MQTT_USER_MAX]=0;
@@ -168,6 +215,7 @@ int main(int argc,char **argv) {
     else if(!strcmp(argv[1],"failures"))failures();
     else if(!strcmp(argv[1],"gates"))gates();
     else if(!strcmp(argv[1],"fairness"))fairness();
+    else if(!strcmp(argv[1],"independent"))independent();
     else {assert(!strcmp(argv[1],"bounds"));bounds();}
     assert(!locked);return 0;
 }

@@ -1,25 +1,48 @@
 #include "../../common/i18n.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "wire_mp.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include "../../common/device_hostname.h"
+#ifdef IOTCLOUD_BRY88_SCREEN
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#endif
 #include <Wire.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <memory>
 #include <atomic>
+#include <freertos/semphr.h>
+#include "http_read_snapshot.h"
+extern "C" {
+#include "../../common/local_auth.h"
+#include "../../common/typed_wire.h"
+#include "../../common/lan_wire.h"
+#include "../../common/lan_wire_v4.h"
+}
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
+#include <esp_pm.h>
+#include <esp_wifi.h>
+#include <driver/uart.h>
 #include <mqtt_client.h>
 #include <mbedtls/base64.h>
 #ifdef IOTCLOUD_HUB
 #include <esp_heap_caps.h>
 #include <mbedtls/pkcs5.h>
-#include <mbedtls/sha1.h>
 #include "hub_service.h"
 #include "hub_native_publish.h"
-#include "hub_transport.h"
+#include "hub_device_bus.h"
+#include "hub_lan_discovery.h"
+#include "hub_lan_client.h"
+#include "hub_lan_queue.h"
+#include "hub_lan_result.h"
+#include "hub_http_command.h"
+#include <mdns.h>
 #include "hub_relay.h"
 #include "hub_home.h"
 #include "hub_home_storage.h"
@@ -41,6 +64,7 @@ static TwoWire pmBus(0), thBus(1);
 static HardwareSerial co2Uart(2), hchoUart(1);
 enum Sensor { PM25, CO2, TEMPERATURE, HUMIDITY, TVOC, HCHO, PM10, SENSOR_COUNT };
 static daikin::Sample readings[SENSOR_COUNT];
+static uint32_t sensorBoot=0,sensorSequence=0;
 static const char *keys[]={"pm25","co2","temperature","humidity","tvoc","formaldehyde","pm10"};
 static const char *units[]={"µg/m³","ppm","°C","%","ppb","mg/m³","µg/m³"};
 static Preferences prefs;
@@ -55,7 +79,7 @@ static int commandSubId=-1;
 static bool sgpReady=false;
 static uint32_t sgpSince=0, nextSample=0, nextSgp=0, nextPublish=0, connectAt=0;
 static volatile uint32_t rebootAt=0;
-static String deviceId, apName, mqttRoot;
+static String deviceId, apName, mqttRoot, deviceHostname;
 static portMUX_TYPE mqttMux=portMUX_INITIALIZER_UNLOCKED;
 static char mqttPending[4097];
 static volatile bool mqttQueued=false;
@@ -70,9 +94,9 @@ static DynamicJsonDocument config(configCapacity);
 static bool configRecovery=false;
 #ifdef IOTCLOUD_HUB
 static iotcloud::HubService hubService(config);
-static iotcloud::HubTransport hubTransport;
-static iotcloud::HubRelay hubRelay(config,hubService,hubTransport.broker);
-static iotcloud::HubHome hubHome(hubTransport.broker);
+static iotcloud::HubDeviceBus hubDeviceBus;
+static iotcloud::HubRelay hubRelay(config,hubService,hubDeviceBus);
+static iotcloud::HubHome hubHome(hubDeviceBus);
 static bool homeReset();
 static bool homeFactoryReset();
 static void homeStatus(JsonObject);
@@ -81,6 +105,15 @@ static void homeQuiesce();
 static void homeInit();
 static void pollHome(uint32_t);
 static bool hubReady();
+static void pollLocalControls(uint32_t);
+static bool hubAllocationReady(size_t);
+static bool hubAllocationReady(size_t,size_t);
+static size_t hubByteHeap();
+static size_t hubByteBlock();
+static bool hubLanSend(const std::string &,const std::string &,bool);
+static void pollHubLan(uint32_t);
+static void hubLanReset();
+static void hubLanStatus(JsonObject);
 static void hubApiExecute();
 static void hubLocalPublish(const String &,const String &,bool);
 static bool hubCapture(esp_mqtt_event_handle_t,unsigned);
@@ -103,6 +136,13 @@ static bool mqttRestart=false, wifiRestart=false;
 #include "build_info.h"
 #include "firmware_identity.h"
 static const char *version=DAIKIN_VERSION;
+#ifdef IOTCLOUD_BRY88_SCREEN
+static constexpr const char *hardwareModel="BRY88BBA15G";
+static constexpr unsigned otaModel=6;
+#else
+static constexpr const char *hardwareModel="BRY88AX151K";
+static constexpr unsigned otaModel=4;
+#endif
 extern "C" {
 extern const daikin::FirmwareIdentity daikin_target __attribute__((section(".rodata_custom_desc"),used)) = {
   DAIKIN_TARGET,"PHICOMM-DAIKIN-1:" DAIKIN_VARIANT
@@ -116,7 +156,23 @@ static void updatePassword(){
 }
 static const char *pmModel="detecting";
 
-static String loadConfigText(){
+static ph_auth_state localAuth;
+static ph_auth_store loadedAuthStore;
+static SemaphoreHandle_t localAuthMutex;
+static bool localAuthReady=false;
+static void invalidateBusinessStatusCache();
+static bool pollBusinessStatusCache(uint32_t);
+static bool lanBusinessPacket(const ph_value *,const char *,uint16_t);
+static void pollLanBusiness();
+static void advertiseLanBusiness();
+#ifdef IOTCLOUD_HUB
+static bool hubLanPacket(const ph_value *,const char *,uint16_t);
+static void initHubLan();
+#endif
+static bool saveConfig(DynamicJsonDocument &);
+static bool saveConfigTransaction(DynamicJsonDocument &,bool);
+#include "auth_storage.inc"
+static String loadLegacyConfigText(){
   const char *key="config";
 #ifdef IOTCLOUD_HUB
   // Never reuse the legacy string key for a blob: IDF may retain both types.
@@ -136,30 +192,18 @@ static String loadConfigText(){
   return prefs.getString(key,"{}");
 }
 static bool due(uint32_t now,uint32_t at){return int32_t(now-at)>=0;}
-static bool saveConfig(DynamicJsonDocument &candidate){
-#ifdef IOTCLOUD_HUB
-  if(hubRestartPending())return false;
-#endif
-  if(configRecovery||candidate.overflowed())return false;
-  candidate["_version"]=1;
-  if(candidate.overflowed())return false;
-  const size_t length=measureJson(candidate);
-#ifdef IOTCLOUD_HUB
-  if(length>6144)return false;
-#else
-  if(length>3999)return false;
-#endif
-  String text;text.reserve(length);serializeJson(candidate,text);
-  if(text.length()!=length)return false;
-#ifdef IOTCLOUD_HUB
-  // Stock NVS is 16 KiB. This is a document limit, not a free-space promise;
-  // NVS can still reject an update while preserving the previous generation.
-  // Keep the legacy key intact until and after the separate hub blob commits.
-  if(prefs.putBytes("config_hub",text.c_str(),length)!=length)return false;
-#else
-  if(prefs.putString("config",text)!=length)return false;
-#endif
-  config=std::move(candidate);config.shrinkToFit();updatePassword();return true;
+static bool saveConfigTransaction(DynamicJsonDocument &candidate,bool forceRevoke){
+  if(!localAuthReady){bool saved=persistAuthConfig(candidate,ph_auth_store_empty_value());if(saved)invalidateBusinessStatusCache();return saved;}
+  struct Transaction {DynamicJsonDocument *candidate;} transaction{&candidate};
+  char password[33];strlcpy(password,candidate["auth"]["password"]|"",sizeof(password));
+  bool saved=ph_auth_credential_commit(&localAuth,password,forceRevoke,
+    [](void *opaque,const ph_auth_store *store){return persistAuthConfig(*static_cast<Transaction*>(opaque)->candidate,store);},&transaction);
+  memset(password,0,sizeof(password));if(saved)invalidateBusinessStatusCache();return saved;
+}
+static bool saveConfig(DynamicJsonDocument &candidate){return saveConfigTransaction(candidate,false);}
+static bool resetConfiguration(){
+  DynamicJsonDocument empty(128);empty.to<JsonObject>();
+  bool recovery=configRecovery;configRecovery=false;bool saved=saveConfigTransaction(empty,true);if(!saved)configRecovery=recovery||configRecovery;return saved;
 }
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
@@ -167,88 +211,176 @@ static void startAccessPoint(){
   WiFi.softAP(apName.c_str());
 }
 static void startWifi(){
+  WiFi.setHostname(deviceHostname.c_str());
   WiFi.mode(WIFI_AP_STA);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
   // Recovery AP remains available when the saved station is unreachable.
   startAccessPoint();
   const char *ssid=config["wifi"]["ssid"]|"";
   if(*ssid)WiFi.begin(ssid,config["wifi"]["password"]|"");
   connectAt=millis();
 }
+#ifdef IOTCLOUD_BRY88_SCREEN
+static bool g3OnlineBusy=false;
+#include "../../BRY88BBA15G/runtime.inc"
+#include "../../BRY88BBA15G/screen_services.inc"
+#else
 #include "sensors.inc"
+#endif
 #include "indicators.inc"
+#include "lan_pairing.inc"
 #include "sessions.inc"
+#ifdef IOTCLOUD_BRY88_SCREEN
+static const char *g3OnlineCommand(const String &,JsonObjectConst,JsonObject);
+static void g3OnlinePoll();
+#endif
 #include "commands.inc"
 #include "http.inc"
+#ifdef IOTCLOUD_BRY88_SCREEN
+#include "../../BRY88BBA15G/screen_http.inc"
+#include "../../BRY88BBA15G/online_ota.inc"
+#endif
+#include "lan_business.inc"
 #include "mqtt.inc"
 #ifdef IOTCLOUD_HUB
+#include "hub_lan.inc"
 #include "hub.inc"
 #include "home.inc"
 #endif
+// Called by loop and by bounded HAP waits; never re-enters homeSpan.poll().
+static void pollLocalControls(uint32_t now){
+  // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
+  #ifndef IOTCLOUD_BRY88_SCREEN
+  static uint32_t pressedAt=0;static bool pressed=false,handled=false;
+  if(digitalRead(34)==LOW){
+    if(!pressed){pressed=true;handled=false;pressedAt=now;}
+    else if(!handled&&!otaActive&&uint32_t(now-pressedAt)>=5000){handled=true;startWifi();}
+  }else{pressed=false;handled=false;}
+  #endif
+  pollIndicators(now);
+  if(!otaActive)pollSensors(now);
+  pollBusinessStatusCache(now);
+}
 void setup(){
   Serial.begin(115200);
-  if(!prefs.begin("daikin",false)){Serial.println("NVS unavailable");while(true)delay(1000);}
+  businessReadSnapshot.begin();
+  if(!prefs.begin(
+#ifdef IOTCLOUD_BRY88_SCREEN
+    "bry88-screen",
+#else
+    "daikin",
+#endif
+    false)){Serial.println("NVS unavailable");while(true)delay(1000);}
   {
-    String text=loadConfigText();
-    if(deserializeJson(config,text)||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
+    String text=loadAuthConfigText();
+    if(deserializeJson(config,text.c_str(),text.length())||!config.is<JsonObject>()||!validConfig(config.as<JsonObjectConst>())){
       configRecovery=true;config.clear();config.to<JsonObject>();Serial.println("Configuration recovery required");
     }
   }
   config.shrinkToFit();
-  updatePassword();indicator=config["indicator"]|false;
+  updatePassword();initLocalAuth();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
   WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
-  apName="BRY88AX151K-AP-"+deviceId.substring(6);apName.toUpperCase();
+  String hostnameModel=hardwareModel;hostnameModel.toLowerCase();
+  char hostname[64];
+  if(!ph_device_hostname(hostname,sizeof(hostname),hostnameModel.c_str(),deviceId.c_str())){Serial.println("Invalid factory MAC");while(true)delay(1000);}
+  deviceHostname=hostname;
+  apName=String(hardwareModel)+"-AP-"+deviceId.substring(6);apName.toUpperCase();
+  #ifdef IOTCLOUD_BRY88_SCREEN
+  screenInit();
+  #endif
   startWifi();
+  #ifndef IOTCLOUD_BRY88_SCREEN
   pmBus.begin(23,22,100000);thBus.begin(19,21,100000);pmBus.setTimeOut(50);thBus.setTimeOut(50);
   co2Uart.begin(9600,SERIAL_8N1,16,17);hchoUart.begin(9600,SERIAL_8N1,5,18);
   for(int p:{4,25,32,33}){pinMode(p,OUTPUT);digitalWrite(p,LOW);}
   pinMode(34,INPUT); // External pull resistor is required on input-only GPIO34.
   const uint8_t hdcConfig[]={2,0x10,0};writeI2c(thBus,0x40,hdcConfig,3);
   const uint8_t hchoMode[]={0xff,1,0x78,0x41,0,0,0,0,0x46};hchoUart.write(hchoMode,9);
+  #endif
   httpd_config_t server=HTTPD_DEFAULT_CONFIG();server.stack_size=10240;server.recv_wait_timeout=10;server.max_uri_handlers=48;
+  // Separate browser pages retain idle keep-alive sockets. Reclaim the oldest
+  // idle connection when the fixed connection table fills.
+  server.lru_purge_enable=true;
 #ifdef IOTCLOUD_HUB
   server.uri_match_fn=httpd_uri_match_wildcard;
 #endif
   if(httpd_start(&web,&server)==ESP_OK){
     httpd_uri_t root={};root.uri="/";root.method=HTTP_GET;root.handler=rootHandler;httpd_register_uri_handler(web,&root);
     httpd_uri_t info={};info.uri="/api/v1/info";info.method=HTTP_GET;info.handler=infoHandler;httpd_register_uri_handler(web,&info);
+    for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout"}){httpd_uri_t auth={};auth.uri=path;auth.method=HTTP_POST;auth.handler=strstr(path,"logout")?logoutHandler:loginHandler;httpd_register_uri_handler(web,&auth);}
     httpd_uri_t status={};status.uri="/api/v1/status";status.method=HTTP_GET;status.handler=statusHandler;httpd_register_uri_handler(web,&status);
-    for(auto path:{"/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
+    for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout","/api/v1/info","/api/v1/status","/api/v1/command","/api/v1/ota/upload","/api/v1/ota/upload-unsigned","/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t options={};options.uri=path;options.method=HTTP_OPTIONS;options.handler=optionsHandler;httpd_register_uri_handler(web,&options);}
     for(auto path:{"/api/v1/config/backup","/api/v1/config/restore"}){httpd_uri_t backup={};backup.uri=path;backup.method=strstr(path,"restore")?HTTP_POST:HTTP_GET;backup.handler=backupHandler;httpd_register_uri_handler(web,&backup);}
+#ifdef IOTCLOUD_BRY88_SCREEN
+    httpd_uri_t screenUpload={};screenUpload.uri="/api/v1/screen/ota/upload";screenUpload.method=HTTP_POST;screenUpload.handler=screenUploadHandler;httpd_register_uri_handler(web,&screenUpload);
+    screenUpload.method=HTTP_OPTIONS;screenUpload.handler=optionsHandler;httpd_register_uri_handler(web,&screenUpload);
+#endif
     httpd_uri_t cmd={};cmd.uri="/api/v1/command";cmd.method=HTTP_POST;cmd.handler=commandHandler;httpd_register_uri_handler(web,&cmd);
     for(auto path:{"/api/v1/ota/upload","/api/v1/ota/upload-unsigned"}){httpd_uri_t ota={};ota.uri=path;ota.method=HTTP_POST;ota.handler=uploadHandler;httpd_register_uri_handler(web,&ota);}
-#ifndef IOTCLOUD_HUB
+#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)
     httpd_uri_t convert={};convert.uri="/api/v1/ota/convert";convert.method=HTTP_POST;convert.handler=convertHandler;httpd_register_uri_handler(web,&convert);
     convert.method=HTTP_OPTIONS;convert.handler=optionsHandler;httpd_register_uri_handler(web,&convert);
 #endif
   }
 #ifdef IOTCLOUD_HUB
-  registerHubHttp();hubInit();homeInit();
+  sensorBoot=esp_random()|1;
+  registerHubHttp();hubInit();initHubLan();homeInit();
 #endif
   // Confirm local startup once the command server is available.
   if(web)esp_ota_mark_app_valid_cancel_rollback();
-  sensorBoot=esp_random()|1;sensorUdp.begin(11288);
-  startMqtt();Serial.printf("DAIKIN BRY88AX151K %s %s\n",pmModel,deviceId.c_str());
+  if(!sensorBoot)sensorBoot=esp_random()|1;sensorUdp.begin(11288);
+  startMqtt();Serial.printf("iotcloud %s %s %s\n",hardwareModel,version,deviceId.c_str());
+#ifdef IOTCLOUD_BRY88_SCREEN
+  // Keep console baud independent of APB when DFS selects the 10 MHz crystal.
+  Serial.flush();
+  uart_config_t console = {};
+  console.baud_rate=115200;console.data_bits=UART_DATA_8_BITS;
+  console.parity=UART_PARITY_DISABLE;console.stop_bits=UART_STOP_BITS_1;
+  console.flow_ctrl=UART_HW_FLOWCTRL_DISABLE;console.source_clk=UART_SCLK_REF_TICK;
+  ESP_ERROR_CHECK(uart_param_config(UART_NUM_0,&console));
+  const esp_pm_config_esp32_t power = {80,10,true};
+  ESP_ERROR_CHECK(esp_pm_configure(&power));
+#endif
 }
 void loop(){
   uint32_t now=millis();
-  if(!otaActive){pollSensors(now);pollSessions();}
+  pollLocalControls(now);
+  if(!otaActive){pollSessions();pollLanPairing();}
+  pollBusinessStatusCache(now);pollLanBusiness();
   if(webPending){
+    if(webAuthRequired&&!localAuthContextValid(&webAuthContext)){
+      webResult="{\"code\":\"unauthorized\"}";
 #ifdef IOTCLOUD_HUB
-    if(webOperation==3){if(otaActive){hubHttpStatus=503;hubHttpToken="";webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
+      hubHttpStatus=401;
 #endif
-    if(webOperation==4){if(!mqttStateJson(webResult,httpStatusBody))webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);portENTER_CRITICAL(&webMux);webPending=false;webDone=true;portEXIT_CRITICAL(&webMux);}
-  if(mqttQueued){String body(mqttPending);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
+    }else{
+#ifdef IOTCLOUD_HUB
+    if(webOperation==3){if(otaActive){hubHttpStatus=503;webResult="{\"code\":\"busy\"}";}else hubApiExecute();}else
+#endif
+    if(webOperation==4){if(businessStatusReady)webResult=cachedHttpStatus();else webResult="{\"code\":\"busy\"}";}else webResult=otaActive?"{\"code\":\"busy\",\"message\":\"OTA active\"}":webOperation?backupExecute():execute(webBody);}
+    portENTER_CRITICAL(&webMux);webPending=false;
+#ifdef IOTCLOUD_HUB
+    webDone=!hubHttpDeferred;
+#else
+    webDone=true;
+#endif
+    portEXIT_CRITICAL(&webMux);}
+  if(mqttQueued){String body(mqttPending,mqttReceived);bool sensor=mqttSensorCommand;portENTER_CRITICAL(&mqttMux);mqttQueued=false;portEXIT_CRITICAL(&mqttMux);if(!otaActive){if(sensor)sessionGrant(body);else if(!sessionGrant(body))publish(mqttRoot+"/result",execute(body),false);}}
   if(mqttOnline){mqttOnline=false;
-    DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeJson(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
+    DynamicJsonDocument doc(1024);capabilities(doc.to<JsonObject>());String text;serializeWireMP(doc,text);publish(mqttRoot+"/capabilities",text);publish(mqttRoot+"/availability","online");
     String discoveryTopic=mqttRoot.substring(0,mqttRoot.indexOf("/daikin/"))+"/discovery/"+deviceId;
-    publish(discoveryTopic,"{\"schema\":1,\"model\":\"daikin\",\"protocol\":\"tmcp\",\"protocol_version\":2,\"version\":\"v2\"}");haBirth=true;
-    publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,String("{\"ip\":\"")+WiFi.localIP().toString()+"\"}");
+    doc.clear();doc["schema"]=2;doc["model"]="daikin";doc["protocol"]="tmcp";doc["protocol_version"]=2;doc["version"]="v2";
+    doc["device_id"]=deviceId;doc["firmware_version"]=version;doc["variant"]=DAIKIN_VARIANT;doc["wire_version"]=1;
+    doc.createNestedArray("wire_formats").add("msgpack");doc["default_wire_format"]="msgpack";
+    text="";serializeWireMP(doc,text);publish(discoveryTopic,text);haBirth=true;
+    doc.clear();doc["ip"]=WiFi.localIP().toString();text="";serializeWireMP(doc,text);
+    publish(sensorRoot.substring(0,sensorRoot.indexOf("/sensor/"))+"/address/"+deviceId,text);
   }
   static bool previousHcho=false,previousPm10=false;
   if(previousHcho!=hchoPresent||previousPm10!=sensorPresent(PM10)){previousHcho=hchoPresent;previousPm10=sensorPresent(PM10);haBirth=true;}
   #ifdef IOTCLOUD_HUB
-  pollHub(now);
+  pollHub(now);pollHubHttpCommand(millis());
   const bool outputReady=mqttConnected||hubReady();
 #else
   const bool outputReady=mqttConnected;
@@ -258,16 +390,19 @@ void loop(){
   if(mqttRestart){mqttRestart=false;startMqtt();}
   if(wifiRestart){wifiRestart=false;startWifi();}
   pollIndicators(now);
-  // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
-  static uint32_t pressedAt=0;static bool pressed=false,handled=false;
-  if(digitalRead(34)==LOW){
-    if(!pressed){pressed=true;handled=false;pressedAt=now;}
-    else if(!handled&&!otaActive&&uint32_t(now-pressedAt)>=5000){handled=true;startWifi();}
-  }else{pressed=false;handled=false;}
-  // Close initial recovery AP after station has been stable for two minutes.
+  // G3 closes its recovery AP sooner to reduce startup load after joining Wi-Fi.
+#ifdef IOTCLOUD_BRY88_SCREEN
+  constexpr uint32_t apCloseDelay=5000;
+#else
+  constexpr uint32_t apCloseDelay=120000;
+#endif
   static uint32_t connectedSince=0;
-  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(("daikin-"+deviceId).c_str()))MDNS.addService("http","tcp",80);}if(!configRecovery&&uint32_t(now-connectedSince)>120000&&uint32_t(now-connectAt)>120000)WiFi.softAPdisconnect(true);}
-  else{if(connectedSince)MDNS.end();connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
+  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(deviceHostname.c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&(WiFi.getMode()&WIFI_AP)&&uint32_t(now-connectedSince)>apCloseDelay&&uint32_t(now-connectAt)>apCloseDelay)WiFi.softAPdisconnect(true);}
+  else{if(connectedSince){
+#ifdef IOTCLOUD_HUB
+    hubLanMdnsEnding();
+#endif
+    MDNS.end();}connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   #ifdef IOTCLOUD_HUB
   pollHome(millis());
   #endif
@@ -277,8 +412,17 @@ void loop(){
   static String serialBody;static bool serialOverflow=false;
   while(Serial.available()){
     char c=Serial.read();if(c=='\r')continue;
-    if(c=='\n'){if(!serialOverflow&&serialBody.length())Serial.println(otaActive?"{\"code\":\"busy\"}":execute(serialBody));serialBody="";serialOverflow=false;}
+    if(c=='\n'){if(!serialOverflow&&serialBody.length())Serial.println(otaActive?"{\"code\":\"busy\"}":execute(serialBody,false));serialBody="";serialOverflow=false;}
     else if(!serialOverflow){if(serialBody.length()<4096)serialBody+=c;else{serialBody="";serialOverflow=true;}}
   }
+  #ifdef IOTCLOUD_BRY88_SCREEN
+  g3OnlinePoll();
+  screenPoll(millis());
+  screenPowerPoll(millis(),otaActive||screenUploadBusy||screenOtaActive()||g3OnlineBusy);
+  // Active stop-and-wait traffic needs prompt credit/ACK service. Keep the
+  // longer tickless idle interval when no media transfer owns the UART.
+  delay(screenMediaNeedsFastPoll()?1:10);
+  #else
   delay(2);
+  #endif
 }

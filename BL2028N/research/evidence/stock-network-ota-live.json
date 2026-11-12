@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "date_utc": "2026-10-30",
+  "device": {
+    "model": "S30-V1B",
+    "module": "BL2028N",
+    "chip": "BK7231N",
+    "stock_app_version": "2M.1220"
+  },
+  "scope": "One authorized DUT; stock to community network OTA and same-source community re-OTA",
+  "build": {
+    "version": "1.0.0-rc.3-dc3a36-dirty",
+    "project_head": "dc3a36f0a52ac00fab849709e079b927a6346c8a",
+    "branch": "hotfix/rc4-selected-integration",
+    "dirty": true,
+    "compiler": "GCC 5.4.1",
+    "openbeken_sha": "7b754d6fc80b72115ece31fcf4527f011f90deef",
+    "sdk_sha": "07fd9e0e2da0aabaddab00be2a897589be235158",
+    "flash_layout": {
+      "name": "s30-v1b-stock-v1",
+      "app_start": 69632,
+      "app_end": 1253376,
+      "ota_start": 1253376,
+      "ota_size": 712704,
+      "factory_start": 1966080,
+      "cfg_start": 1974272,
+      "lfs_start": 2031616,
+      "lfs_end": 2064384,
+      "bootloader_included": false,
+      "legacy_community_config_migration": false
+    }
+  },
+  "preparation": {
+    "stock_restored_by_serial": true,
+    "stock_image_bytes": 2097152,
+    "stock_independent_exact_readback": true,
+    "serial_used_for_initial_network_diagnosis": true,
+    "before_stock_restore_two_identical_backups": true
+  },
+  "stock_network_ota": {
+    "trigger": "CoAP /qlink/netinfo -> controlled HTTPS CGW -> TLS MQTT AndLink function=file -> HTTP RBL",
+    "bytes": 476256,
+    "sha256": "5fafd4cc415d4be52fb8b282843788d24eb0728131a17307bcda3590663093de",
+    "http_result": 200,
+    "serial_ota_command_used": false,
+    "serial_flash_used": false,
+    "dns_redirect_used": false,
+    "bootloader_installed_to_100_percent": true,
+    "community_default_settings_started": true,
+    "boot_excerpt": [
+      "go os_addr(0x10000)..........",
+      "go os_addr(0x10000)..........",
+      "go os_addr(0x10000)..........",
+      "[I/OTA] OTA firmware(app) upgrade(2M.1220->1.0.0-rc.3-dc3a36-dirty) startup.",
+      "[I/OTA] OTA Write: [====================================================================================================] 100%",
+      "[E/OTA] (ota_erase_dl_rbl:32) ota_erase_dl_rbl erase:132000",
+      "go os_addr(0x10000).........."
+    ]
+  },
+  "community_provisioning": {
+    "normal_ap_http_config_set": true,
+    "no_password_no_login": true,
+    "wifi_restored": true,
+    "temporary_gateway_interface_removed": true
+  },
+  "community_network_reota": {
+    "same_source_repack": true,
+    "same_version": true,
+    "bytes": 476256,
+    "sha256": "af85b6e62aa76c49317c6c06372b2d44d03d533d501653214f41d2f95f2732a6",
+    "http_result": 200,
+    "boot_changed": true,
+    "http_recovery_seconds": 49.6,
+    "settings_preserved": true,
+    "web_matches_source": true,
+    "web_sha256": "da749d519f57bd4a927a6cd366a3cc07ba1d19b47bb9d9f21a16f8a50e6934bc",
+    "boot_excerpt": [
+      "[I/OTA] OTA firmware(app) upgrade(1.0.0-rc.3-dc3a36-dirty->1.0.0-rc.3-dc3a36-dirty) startup.",
+      "[I/OTA] OTA Write: [====================================================================================================] 100%",
+      "[E/OTA] (ota_erase_dl_rbl:32) ota_erase_dl_rbl erase:132000",
+      "go os_addr(0x10000).........."
+    ],
+    "stable_config_fields_compared": 57,
+    "stable_config_fields_unchanged": true
+  },
+  "flash_readback": {
+    "flash_write_performed": false,
+    "flash_bytes": 2097152,
+    "independent_device_crc_verified": true,
+    "stock_bootloader_preserved": true,
+    "factory_rf_tlv_preserved": true,
+    "installed_raw_app_exact_match": true,
+    "installed_raw_sha256": "1e986cc03ea39fbfe41af96ab2ea19fda188b16ad7d07527e163971bafa4cb59",
+    "installed_footer_matches_second_ota": true,
+    "http_recovered": true
+  },
+  "browsers": [
+    {
+      "status": "PASS",
+      "engine": "chromium",
+      "quick_tab_rounds_ms": [
+        648,
+        650,
+        644
+      ],
+      "draft_preserved": true,
+      "blank_frames_observed": 0,
+      "empty_password_reloads": 3,
+      "api_requests": 72,
+      "api_errors": 0,
+      "javascript_errors": 0,
+      "downloads": 0
+    },
+    {
+      "status": "PASS",
+      "engine": "webkit",
+      "quick_tab_rounds_ms": [
+        665,
+        634,
+        635
+      ],
+      "draft_preserved": true,
+      "blank_frames_observed": 0,
+      "empty_password_reloads": 3,
+      "api_requests": 72,
+      "api_errors": 0,
+      "javascript_errors": 0,
+      "downloads": 0
+    }
+  ],
+  "not_validated": [
+    "Other S30 variants or stock firmware versions",
+    "Return to stock or dual boot",
+    "Unconfigured stock first-time Wi-Fi onboarding from start to finish",
+    "Long-duration stability or metering accuracy",
+    "Legacy community configuration migration to stock layout",
+    "Cross-version community OTA; this follow-up used a freshly packaged build of the same sources"
+  ],
+  "private_evidence_root": "../phicomm-messagepack-lab/private/main-integration-20261030/s30-integration-20261030/stock-live-20261030/"
+}

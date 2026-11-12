@@ -41,6 +41,7 @@ def frame(opcode, body=b'', masked=True):
                      if masked else body)
 
 
+@unittest.skip("Obsolete embedded-MQTT topology; not UDP acceptance")
 class TransportWill(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -1,0 +1,24 @@
+{
+  "source_commit": "c11e58dd568df82fc02293931ae15101c4f27cb2",
+  "payload_offset": 16,
+  "frozen_settings_offsets": {
+    "coefficients": 16,
+    "energy_kwh": 40,
+    "auth": 48,
+    "report_seconds_v2": 440,
+    "name_v2": 444,
+    "socket_name_v2": 508
+  },
+  "fixtures": {
+    "s30_legacy_v1": {
+      "size": 456,
+      "sha256": "8368bc4eaac518b26f4ddf76bc3bcfcd856d76a54371220f5b0079d344fb4bf8",
+      "magic": "0x314c4250"
+    },
+    "s30_legacy_v2": {
+      "size": 592,
+      "sha256": "83f1df5debc5688efb51438c3b711399a9a589e583070a7a46ff349739a3dd58",
+      "magic": "0x324c4250"
+    }
+  }
+}

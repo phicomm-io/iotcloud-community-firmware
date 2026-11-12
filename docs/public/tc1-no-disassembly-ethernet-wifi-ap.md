@@ -1,8 +1,10 @@
 # TC1 免拆刷机图文教程
 
+下载时先到[固件与资源下载]({{SITE_URL}}#releases)选择该设备的最新兼容版本，并使用同版本校验清单。文中的固定版本用于可复现的操作示例；明确标出的最低版本、原厂版本和迁移工具条件仍需满足。
+
 用电脑的**有线网卡传固件、无线网卡发送触发请求**，另用路由器或 AP 提供刷机热点。无需拆机、焊接或安装 Python。支持 Windows、macOS 和 Linux。
 
-**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26 或 1.0.0.24。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
+**适用设备：TC1 智能排插 A1 硬件版（EMW3031 / MK3031），原厂固件 1.0.0.26、1.0.0.24 或 1.0.0.21。** TC1 A2、其他原厂版本和 A1 空气净化器不适用。
 
 <!-- os-picker -->
 
@@ -17,8 +19,9 @@
 | [mico_ota.bin](assets/tools/tc1-no-disassembly/mico_ota.bin) | 已准备好的配套固件，放到 TFTP 服务目录，文件名必须保持不变 |
 | [tftp-trigger.bin（payload，1.0.0.26）](assets/tools/tc1-no-disassembly/tftp-trigger.bin) | 发送给原厂 OTA 接口的触发文件，用于 1.0.0.26 |
 | [tftp-trigger-1.0.0.24.bin（payload，1.0.0.24）](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.24.bin) | 同一触发文件，目标地址按 1.0.0.24 平移 |
+| [tftp-trigger-1.0.0.21.bin（payload，1.0.0.21）](assets/tools/tc1-no-disassembly/tftp-trigger-1.0.0.21.bin) | 同一触发文件，目标地址按 1.0.0.21 平移 |
 
-固件为 **649,344 字节**，两个触发文件各 **397 字节**，请用[校验和](assets/SHA256SUMS)核对。后续日常升级见[固件更新](firmware-update)。
+固件为 **649,344 字节**，各触发文件均为 **397 字节**，请用[校验和](assets/SHA256SUMS)核对。后续日常升级见[固件更新](firmware-update)。
 
 电脑需要 `curl` 和 TFTP 服务。先下载好文件和工具，再切换 Wi-Fi；保留下载文件的原名。
 
@@ -217,7 +220,7 @@ curl --fail --max-time 30 -o tc1-download-check.bin tftp://10.0.0.2/mico_ota.bin
 
 <!-- /os -->
 
-检查用的电脑若是其他系统，使用其对应的 curl 命令；没有 TFTP 支持时，使用 TFTP 客户端以 **binary / octet** 模式下载。将下载文件与原文件核对大小和 SHA-256；在服务器本机下载不能证明 AP 无线侧已互通。
+检查用的电脑若是其他系统，使用其对应的 curl 命令；没有 TFTP 支持时，使用 TFTP 客户端以 **binary / octet** 模式下载。在连接 AP 的电脑上下载后，核对文件大小和 SHA-256。
 
 ## 5. 让 TC1 进入配网模式
 
@@ -255,7 +258,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 <!-- /os -->
 
-返回信息中核对 **`VERSION` 为 `1.0.0.26` 或 `1.0.0.24`**，本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`。如果版本或构建标识不符，停止使用本页 payload；payload 必须与识别出的版本对应（1.0.0.26 用 `tftp-trigger.bin`，1.0.0.24 用 `tftp-trigger-1.0.0.24.bin`），不要仅凭热点名称判断兼容。
+返回信息中核对 **`VERSION` 为 `1.0.0.26`、`1.0.0.24` 或 `1.0.0.21`**（1.0.0.21 的 `COMPILE_TIME` 为 `Oct 29 2017 11:09:21`，另两个为 `Apr 13 2018 10:09:06`），本页截图的 `COMMITID` 为 `d1ecc7616f55bbf781be3bd80e23bab7c03dc047`（1.0.0.21 为 `d22fb6bcbbb63537ce33e596278963424bf11fbb`）。如果版本或构建标识不符，停止使用本页 payload；payload 必须与识别出的版本对应（1.0.0.26 用 `tftp-trigger.bin`，1.0.0.24 用 `tftp-trigger-1.0.0.24.bin`，1.0.0.21 用 `tftp-trigger-1.0.0.21.bin`），不要仅凭热点名称判断兼容。
 
 <!-- os:windows -->
 
@@ -265,7 +268,7 @@ curl --noproxy '*' --fail --max-time 5 http://10.10.10.1:8000/read-domain
 
 ## 6. 发送触发文件，等待固件下载
 
-打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。设备是 1.0.0.24 时请使用 `tftp-trigger-1.0.0.24.bin`（命令中文件名随之替换）。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
+打开保存 **`tftp-trigger.bin`** 的 `tc1-flash` 文件夹，在这里打开终端。设备是 1.0.0.24 时请使用 `tftp-trigger-1.0.0.24.bin`，设备是 1.0.0.21 时使用 `tftp-trigger-1.0.0.21.bin`（命令中文件名随之替换）。确认 TFTP 正在运行、有线地址仍为 `10.0.0.2`、无线仍连接 TC1，然后**只发送一次**：
 
 <!-- os:windows -->
 
@@ -293,7 +296,7 @@ curl --noproxy '*' --max-time 30 --header 'Content-Type: application/json' --dat
 
 <!-- /os -->
 
-返回 `OTA` 或一串 `A` 只说明接口收到请求，**不能据此判定刷机成功**。设备开始切换网络时，配网热点消失、电脑无线断开属于预期现象；即使 curl 超时，也先观察下载和设备状态，不要立即重复触发。
+收到 `OTA` 或一串 `A` 后，等待设备下载并重启。设备开始切换网络时，配网热点消失、电脑无线断开属于预期现象；即使 curl 超时，也先观察下载和设备状态，不要立即重复触发。
 
 TC1 随后连接 AP 的 `PHICOMM_OTA_AP`，从电脑下载 `mico_ota.bin`。有 TFTP 日志或进度界面的，应看到读取请求和完整传输记录。此时**电脑无线网卡无需改连 AP**，网线继续负责传输。
 
@@ -307,7 +310,7 @@ TC1 随后连接 AP 的 `PHICOMM_OTA_AP`，从电脑下载 `mico_ota.bin`。有 
 
 用电脑或手机连接这个新热点，在浏览器打开 **`http://192.168.0.1/`**，确认能进入社区固件本地网页，再填写日常使用的 Wi-Fi。之后的按键、配网和六路开关操作见 [TC1 功能与操作](tc1-guide)。
 
-**新热点出现且本地网页可访问**，才是本流程的完成标志。HTTP 返回、原厂热点消失或一次 TFTP 下载都不能单独证明完成。
+连接新热点，在本地网页核对设备型号和版本，完成安装。
 
 ## 8. 关闭临时服务，恢复网络
 

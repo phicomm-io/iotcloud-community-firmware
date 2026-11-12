@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 from cryptography.hazmat.primitives.asymmetric import ec
+from DAIKIN.tests.arduinojson import codec_source
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('ota_package', ROOT / 'tools/ota/package.py')
@@ -44,10 +45,18 @@ static int SHA256Result(SHA256Context *s,uint8_t *p){return !SHA256_Final(p,s);}
         # Compile the actual handler so ordering, route selection and activation
         # assertions cover production code as well as the pure prefix parser.
         http = (ROOT / 'DAIKIN/src/http.inc').read_text()
-        handler = http.split('static volatile bool otaActive=false;', 1)[1].split(
+        handler = http.split('struct OtaFlash {', 1)[1].split(
             'static esp_err_t infoHandler(', 1)[0]
-        (d / 'handler.inc').write_text('static volatile bool otaActive=false;' + handler)
-        (d / 'authorization.inc').write_text(http.split('// HTTP handlers run', 1)[0])
+        (d / 'handler.inc').write_text('static volatile bool otaActive=false;\nstruct OtaFlash {' + handler)
+        # OTA tests isolate the signed-image pipeline from the separately tested
+        # token table. Preserve the actual authorization decision and inject
+        # an already validated bearer session at this boundary.
+        decision='static bool authorized(httpd_req_t *req){'+http.split('static bool authorized(httpd_req_t *req){',1)[1].split('\n',1)[0]+'\n'
+        (d / 'authorization.inc').write_text(r'''struct ph_auth_context{};static bool localAuthReady=true;static int localAuth;
+static bool requestAuthorization(httpd_req_t *,char header[80]){const auto &value=requestHeaders["Authorization"];if(value.size()>=80)return false;memcpy(header,value.c_str(),value.size()+1);return true;}
+static bool ph_auth_http_check(int*,const char*header,ph_auth_context*){return !strcmp(header,"Bearer valid-session");}
+static esp_err_t jsonResponse(httpd_req_t *req,const char *status,const String &body){httpd_resp_set_status(req,status);httpd_resp_set_hdr(req,"Cache-Control","no-store");httpd_resp_set_type(req,"application/msgpack");return httpd_resp_send(req,body.c_str(),body.size());}
+'''+decision)
         (d / 'options.inc').write_text('static esp_err_t optionsHandler(' + http.split(
             'static esp_err_t optionsHandler(', 1)[1].split('\n', 1)[0] + '\n')
         (d / 'harness.cpp').write_text(r'''
@@ -88,10 +97,12 @@ static int fault,statusCode,erases,writes,reads,ends,activations,aborts,preferen
 static std::string response;
 static std::map<std::string,std::string> requestHeaders,responseHeaders;
 static daikin::FirmwareIdentity daikin_target;
+// This harness exercises G1/G2 full and Hub. G3 has its own signed OTA suite.
+static constexpr unsigned otaModel=4;
 struct Prefs {bool signedImage=false;void putBool(const char *key,bool value){if(strcmp(key,"ota_signed"))abort();signedImage=value;preferencesWrites++;}};
 static Prefs prefs;
 static char webPassword[33]={};
-static int authMux=0;
+static int authMux __attribute__((unused))=0;
 #define portENTER_CRITICAL(mux) (void)(mux)
 #define portEXIT_CRITICAL(mux) (void)(mux)
 static uint32_t millis(){return 100;}
@@ -106,7 +117,7 @@ static void httpd_resp_set_hdr(httpd_req_t *,const char *name,const char *value)
 static void httpd_resp_set_status(httpd_req_t *,const char *status){statusCode=atoi(status);}
 static void httpd_resp_set_type(httpd_req_t *,const char *){}
 static int httpd_resp_send(httpd_req_t *,const char *body,size_t n){response.assign(body?body:"",n);return ESP_OK;}
-static int mbedtls_base64_decode(uint8_t *out,size_t capacity,size_t *length,const uint8_t *input,size_t n){
+static int __attribute__((unused)) mbedtls_base64_decode(uint8_t *out,size_t capacity,size_t *length,const uint8_t *input,size_t n){
   if(n%4||n/4*3>capacity)return -1;
   int used=EVP_DecodeBlock(out,input,n);if(used<0)return -1;
   while(n&&input[n-1]=='='){--used;--n;}*length=used;return 0;
@@ -175,7 +186,7 @@ static void initialize(int hub,int failure,int authorizedRequest){
   strcpy(webPassword,"device-password");
   std::string credentials=authorizedRequest?"admin:device-password":"admin:wrong-password";
   uint8_t encoded[128];EVP_EncodeBlock(encoded,reinterpret_cast<const uint8_t *>(credentials.data()),credentials.size());
-  requestHeaders["Authorization"]="Basic "+std::string(reinterpret_cast<char *>(encoded));
+  requestHeaders["Authorization"]=authorizedRequest?"Bearer valid-session":"Bearer invalid-session";
   // Even ordinary uploads carry the conversion headers. They must never relax
   // the running variant's identity check on either signed or unsigned route.
   requestHeaders["X-IoTCloud-Target-Variant"]="hub";
@@ -358,16 +369,13 @@ extern "C" int count(int which){
             self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
             self.assertEqual(self.lib.response_header(b'Cache-Control'), b'no-store')
 
-    def test_conversion_allows_unset_web_password_but_checks_existing_password(self):
+    def test_conversion_requires_valid_session_even_if_password_unset(self):
         signed = self.signed(self.image('hub'))
-        self.assertEqual(self.convert(signed, auth=0), 202)
-        self.assertEqual(json.loads(self.lib.reply())['code'], 'accepted')
-        self.assertEqual(self.lib.count(0), 1)
-        for auth in (2, 3, 4):
+        for auth in (0, 2, 3, 4):
             self.assertEqual(self.convert(signed, auth=auth), 401)
             self.assertEqual(json.loads(self.lib.reply())['code'], 'unauthorized')
             self.assertEqual(self.lib.count(0), 0)
-            self.assertTrue(self.lib.response_header(b'WWW-Authenticate').startswith(b'Basic '))
+            self.assertEqual(self.lib.response_header(b'WWW-Authenticate'), b'')
 
     def test_conversion_headers_are_required_and_exact(self):
         signed = self.signed(self.image('hub'))
@@ -385,8 +393,8 @@ extern "C" int count(int which){
             self.assertEqual(self.convert(signed, busy=busy), 409)
             self.assertEqual(json.loads(self.lib.reply())['code'], 'busy')
             self.assertEqual(self.lib.count(0), 0)
-        self.assertEqual(self.convert(signed, recovery=True), 409)
-        self.assertEqual(json.loads(self.lib.reply())['code'], 'migration_required')
+        self.assertEqual(self.convert(signed, recovery=True), 401)
+        self.assertEqual(json.loads(self.lib.reply())['code'], 'unauthorized')
         self.assertEqual(self.lib.count(0), 0)
 
     def test_conversion_cannot_run_from_hub_or_convert_back_to_full(self):
@@ -543,13 +551,10 @@ class VariantHttpSurface(unittest.TestCase):
         capabilities = 'static const char *actions[]=' + commands.split(
             'static const char *actions[]=', 1)[1].split('static bool knownFields(', 1)[0]
         main = (ROOT / 'DAIKIN/src/main.cpp').read_text()
-        registration = '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=' + main.split(
-            '#ifndef IOTCLOUD_HUB\n    httpd_uri_t convert=', 1)[1].split('#endif', 1)[0] + '#endif\n'
-        includes = [ROOT / 'DAIKIN/.pio/libdeps/bry88ab-hub/ArduinoJson/src',
-                    ROOT / 'DAIKIN/.pio/libdeps/bry88ab/ArduinoJson/src']
-        codec = next((path for path in includes if (path / 'ArduinoJson.h').exists()), None)
-        if codec is None:
-            raise RuntimeError('Build one DAIKIN PlatformIO target to fetch the pinned ArduinoJson dependency')
+        guard = '#if !defined(IOTCLOUD_HUB) && !defined(IOTCLOUD_BRY88_SCREEN)\n'
+        registration = guard + '    httpd_uri_t convert=' + main.split(
+            guard + '    httpd_uri_t convert=', 1)[1].split('#endif', 1)[0] + '#endif\n'
+        codec = codec_source()
         with tempfile.TemporaryDirectory(prefix='daikin-ota-surface-') as temporary:
             directory = Path(temporary)
             (directory / 'capabilities.inc').write_text(capabilities)
@@ -559,6 +564,8 @@ class VariantHttpSurface(unittest.TestCase):
 #include <iostream>
 #include <string>
 #include <vector>
+static const char *deviceId="9c9c1ff76748",*version="1.0.0-rc.4";
+static constexpr const char *hardwareModel="BRY88AX151K";
 static bool configRecovery=false,hchoPresent=false;
 #include "capabilities.inc"
 static std::vector<std::string> routes;
@@ -591,6 +598,9 @@ int main(){
                                     '-I' + str(codec), *defines, str(directory / 'surface.cpp'),
                                     '-o', str(binary)], check=True)
                     result = json.loads(subprocess.check_output([str(binary)], text=True))
+                    for key,value in {'device_id':'9c9c1ff76748','model':'daikin','firmware_version':'1.0.0-rc.4','variant':variant}.items():
+                        self.assertEqual(result['capabilities'][key],value)
+                    self.assertEqual(result['capabilities']['sensor_session_protocol'],3)
                     if variant == 'full':
                         self.assertEqual(result['capabilities']['ota_variant_conversion'], 'full-to-hub')
                         self.assertEqual(result['routes'], ['POST /api/v1/ota/convert',

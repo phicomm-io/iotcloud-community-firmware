@@ -1,10 +1,164 @@
 # Release Log
 
-发布前在本 Wiki 编辑对应版本章节，再运行快照工具并提交到源码仓库。
+各版本的功能、修复与升级要求。
+
+## v1.0.0-rc.6
+
+**RC6 为候选测试版本，稳定通道仍为 v0.9.27。升级前备份配置；ESP32 与屏幕 MCU 分别更新。**
+
+**RC6 is a release candidate. The stable channel remains v0.9.27. Back up configuration; update ESP32 and screen MCU separately.**
+
+- **大金 G3 屏幕与传感器支持 / Daikin G3 screen and sensor support**：新增带屏幕 BRY88BBA15G 的 ESP32 固件与独立屏幕 MCU 发布。支持原厂 MCU 协议和当前 RC6 扩展协议、传感器读数、电池状态、RTC 授时、触摸换页、模块启停和启动维护窗口。
+  Adds ESP32 firmware and a separate screen MCU release for BRY88BBA15G. Supports the stock MCU and current RC6 extensions, sensor readings, battery status, RTC synchronization, touch page navigation, module control and a startup maintenance window.
+
+- **可编排屏幕、天气与提醒 / Screen composition, weather and reminders**：网页可组合时钟、数值、文字、折线和堆叠图表、天气与提醒，按真实屏幕比例预览。支持六组主题、组件配色、壁纸、语言、亮度和每周调光计划；外部字库失败时降级显示，通信和恢复服务继续工作。新增布局（行 × 列）：天气 1×4、2×4，时钟 1×4，reading 1×2；网页预览与 MCU 同步。
+  Compose clocks, readings, text, line and stacked charts, weather and reminders with a preview at the real screen aspect ratio. Includes six themes, per-widget colors, wallpaper, language, brightness and weekly dimming. Font resource failures degrade display while communication and recovery services remain available. New layouts (rows × columns): weather 1×4 and 2×4, clock 1×4, and reading 1×2, with matching WebUI and MCU rendering.
+
+- **ESP32、屏幕和字库在线更新 / Online updates for ESP32, screen and font**：ESP32 可从 GitHub、国内和国际镜像检查并安装签名更新，RC 构建使用独立候选通道。屏幕和字库可在局域网页资源页检查、下载并校验后安装；屏幕大文件上传需要本地直连。免拆迁移先更新 ESP32 并保留原厂屏幕，再按需直接安装社区屏幕应用，保留原厂引导区。安装工具与固件从当前 RC6 下载页配套获取，或使用更新的兼容版本。
+  ESP32 can check and install signed updates from GitHub, China and global mirrors; RC builds use a separate candidate channel. Screen applications and fonts can be checked, downloaded and verified from the LAN resource page; large screen uploads require direct LAN access. Wireless migration updates ESP32 first while preserving the stock screen, then optionally installs the community screen application directly while preserving the stock boot region. Get matching tools and firmware from the current RC6 download page, or use a newer compatible release.
+
+- **M1 校时恢复重试 / M1 clock recovery retries**：主控时间读回暂时失败时有界重试，网络校时失败后独立安排重试，减少短暂通信异常造成的时间不同步。
+  Retries transient MCU clock readback failures within a bound and schedules network time retries independently, reducing clock desynchronization after temporary communication failures.
+
+- **S30 定时、功率自动化与原厂安装 / S30 schedules, power automation and stock installation**：S30 的插座定时和功率自动化与 TC1 行为对齐，补齐原厂 HTTP 80 端口 OTA 安装工具及教程；继续使用原生 RBL/STOCK_UA 镜像。
+  Aligns S30 socket schedules and power automation with TC1 and adds a stock OTA installer using HTTP port 80 with instructions. S30 continues to use native RBL/STOCK_UA images.
+
+- **统一网页与 G3 演示 / Shared WebUI and G3 demos**：更新公共网页的插座自动化和功率刷新，新增 G3 布局、亮度、天气、提醒与在线更新设置，提供屏幕设计和设备网页演示。大金下载分为 1/2 代与带屏幕 3 代。
+  Updates shared socket automation and power refresh, adds G3 layout, brightness, weather, reminder and online update settings, and provides screen design and device WebUI demos. Daikin downloads distinguish G1/G2 from the G3 display model.
+
+- **G3 NOR 与壁纸上传修复 / G3 NOR and wallpaper upload fixes**：修复壁纸上传失败，以及上传后 PM2.5/TVOC 读数未恢复、后续 OTA 受阻的问题。NOR 默认使用四线硬件 SFC。
+  Fixes wallpaper upload failures and the PM2.5/TVOC readings failing to resume afterward, which also blocked later OTA uploads. NOR defaults to hardware quad SFC.
+
+- **G3 原厂天气与 Linux 迁移 / G3 stock weather and Linux migration**：保留原厂屏幕 MCU 时，ESP32 将真实当前天气转换为原厂温度、湿度和天气图标；室外 PM2.5 保留缺测。新增 Linux 蓝牙配网脚本，免拆迁移教程补齐实际 STA MAC、2.4 GHz Wi-Fi 和原厂网关应答步骤。修复 ESP32 以 80 MHz 运行时 TLS 握手超时导致的天气缺测。
+  With the stock screen MCU, ESP32 converts real current weather into factory temperature, humidity and condition fields; outdoor PM2.5 remains missing. Adds Linux Bluetooth provisioning and documents the actual STA MAC, 2.4 GHz Wi-Fi and factory gateway responses for wireless migration. Fixes missing weather caused by TLS handshake timeouts with the ESP32 running at 80 MHz.
+
+- **G3 启动与在线升级负载 / G3 startup and online update load**：ESP32 按原厂使用 10–80 MHz 动态调频和自动轻睡眠，Wi-Fi 稳定后关闭恢复热点；MCU 空闲时浅层等待，并协调 ESP32 唤醒。屏幕先完成字库加载再开启传感器，降低初始化并发负载。修复 OTA 准备失败和上传中断；支持屏幕正常运行时连续更新，完成后恢复传感器。
+  ESP32 follows the stock 10–80 MHz dynamic frequency and automatic light-sleep policy, closing the recovery access point after Wi-Fi stabilizes. The MCU waits in shallow sleep while idle and coordinates ESP32 wake. The screen loads fonts before enabling sensors to reduce concurrent startup load. Fixes OTA preparation failures and interrupted uploads. Consecutive updates work while the screen runs normally, with sensors resuming afterward.
+
+- **G3 充电与网络图标 / G3 charging and network icons**：电池图标在 USB 供电时显示闪电，联网圆点改为 Wi-Fi 图标，断网时显示斜线。修正外部供电与电池对应的熄屏时间选择，网页预览同步屏幕显示。修复拔掉 USB 后充电图标仍亮的问题。
+  The battery icon shows a lightning mark while powered by USB. A Wi-Fi icon replaces the network dot and shows a slash while offline. Corrects the external-power and battery screen-timeout selection and keeps the WebUI preview aligned with the display. Fixes the charging icon remaining on after USB is disconnected.
+
+- **G3 长按关机 / G3 long-press shutdown**：修复长按关机后立即重新启动。关机后等待松键，USB 保持供电时需重新长按约 2 秒开机；短按切页和唤醒保持可用。从熄屏开始持续长按也可关机，不再只执行唤醒。最小维护黑屏状态下也支持长按关机和重新开机；传输固件时禁止按键关机。
+  Fixes immediate restart after a long-press shutdown. Shutdown waits for key release; when USB keeps the MCU powered, a new press of about 2 seconds turns it on. Short-press paging and wake remain available. A sustained press from a sleeping display now shuts down instead of only waking it. Long-press shutdown and restart also work in minimal recovery with a black display; power-key shutdown is disabled during firmware transfer.
+
+- **G3 屏幕网页直接安装 / G3 direct screen installation from the WebUI**：首次从原厂屏幕安装和后续社区屏幕升级均可直接选择在线安装或上传文件。一次确认后自动校验、传输并激活，确认新 MCU 正常启动后显示安装成功。修复首次安装后偶发黑屏，以及在线下载误报参数无效的问题。更新提示的换行不再显示为问号。
+  Both first installation from stock screen firmware and later community updates support online installation or file upload. One confirmation starts verification, transfer and activation; success appears after the new MCU starts normally. Fixes intermittent black screens after first installation and invalid-parameter errors during online downloads. Update-message line breaks no longer appear as question marks.
+
+- **G3 云端实时读数 / G3 live cloud readings**：同时连接局域网和 MQTT 时，云端卡片和详情页使用较新的传感器读数，避免旧局域网快照使 G3 显示无数据；按硬件型号选择 G3 详情页。
+  When LAN and MQTT are both connected, cloud cards and details use the newer sensor readings, preventing an older LAN snapshot from leaving G3 with no data. The G3 detail page is selected by hardware identity.
+
+- **G3 传感器校准 / G3 sensor calibration**：新增原厂 CO₂ 400 ppm 与 TVOC 校准入口。网页简要说明预热和参考环境条件，显示采样及发送、应答状态，发命令前可取消。TVOC 完整厂家校准条件尚未公开，页面同步说明。
+  Adds factory CO₂ 400 ppm and TVOC calibration controls. The WebUI explains warmup and reference conditions, reports sampling, command transmission and acknowledgement, and permits cancellation before transmission. Complete manufacturer conditions for TVOC calibration remain unpublished and are identified in the UI.
+
+已知问题：此前在读取多项屏幕配置时观察到过 ESP32 任务看门狗重启，原因仍在排查。
+Known issue: An ESP32 task watchdog reset was previously observed while reading multiple screen configuration items. Its cause remains under investigation.
+
+[RC6 下载 / Downloads](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.6) · [G3 安装 / G3 installation](https://phicomm-io.github.io/guides/daikin-g3-guide.html)
+
+## v1.0.0-rc.5
+
+**RC 为 Beta 测试版本，稳定通道仍为 v0.9.27。** 本版修复 rc.4 验收中发现的认证、通信与网页问题；重新发布补齐 S30 来电保持、功率自动化和 M1 远程读数，以及 TC1 功率规则。升级前备份配置，设备固件与配套前端一起更新。
+
+### 大金中枢共用网页认证
+
+- 中枢不再单独设置账号密码，改用设备 WebUI 管理密码和会话；未设管理密码时直接进入。同一标签页刷新、切换控制页与中枢页复用有效会话，退出和密码变更清除会话。已有中枢用户名、设备列表、配对与转发设置保留；旧中枢密码停用，用户名继续作为主题命名空间。UDP 配对及外部 MQTT broker 认证继续独立配置。
+
+### 中枢设备参数、功率与 HomeKit 读数
+
+- 中枢网页通过 HTTP→UDP 读取已配对设备状态并发送控制，浏览器只需访问中枢。TC1 列表补齐功率，新读数到达时不再短暂显示空白，计量数据过期时隐藏读数；M1 优先读取首屏状态，初始能力读取失败后恢复可用控件。HomeKit 按 M1 实际传感器有效位更新温湿度与 PM2.5。请求串行合并并校验设备身份与响应编号，过期响应不会覆盖新设备，已发出的写操作不自动重放。远端页面提供已实现的控制与诊断；网络、认证、自动化、升级及备份从目标设备本地网页操作。
+
+### 设备名称与 HomeKit 同步
+
+- 设备提供独立的 name.set 命令，只修改名称。中枢将设备确认的名称同步到 HomeKit；支持写入 ConfiguredName 的客户端可反向修改设备名称，保存成功并读取确认后更新显示。双向同步需要中枢和目标设备均升级到 rc.5，现有配对与设备标识保持。Apple 家庭的普通重命名属于客户端本地别名，不会作为改名命令发送给中枢。
+
+### HTTP 鉴权与控制回执
+
+- HTTP 在排队、业务执行和回复时重新核对认证，退出、密码变化或过期后，排队请求不能继续沿用旧权限。控制回执采用有限预留，TC1 在执行前准备回复空间，减少执行成功却无法确认的情况；收包、按钮与 MQTT 心跳保持独立调度。A1/M1 的连接上限诊断改为报告实际请求值。
+- 修复中枢处理 HomeKit 数据时主循环栈占用过大导致的重启。
+
+### TC1 MQTT 与 S30 二进制局域网修复
+
+- TC1 周期上报交由 MQTT owner 线程调度，避免额外上报线程与控制争用。S30 接入共享 UDP v4 的类型化解析、密码配对、原子认证保存及有界回执；可选 SENSOR 订阅被 broker 拒绝时不再断开主 MQTT 连接，并按退避重试。云后端补齐 S30 精确 SENSOR 命令主题 ACL，同时拒绝跨账户与通配符订阅。
+
+### 中枢配对持久化与路由一致性
+
+- 中枢将设备配对凭据与确认的 UDP 路由一起提交，存储失败时不提前启用路由，移除配对流程中的临时密码写入。修复旧配置占用存储导致的中枢写入失败，保留有效配置与配对数据。
+
+### 网页状态与 UTC 时区
+
+- 修复状态代次更新后仍沿用旧快照的问题；设置保存后重新取得对应完整状态。UTC 时区的零分钟偏移按原值显示和保存，不再误变成 UTC+8。
+
+### S30 来电保持、功率规则与 M1 远程读数
+
+- S30 增加来电关闭／开启／保持和最多 8 条本地功率规则；功率严格高于或低于阈值、持续指定秒数后开关，0 秒为立即触发。规则无需 MQTT 或校时，本地按键优先。S30 通过 MessagePack schema 3 发布电压、电流、功率和累计电量的字段描述与数值；同一外部 broker、同一账户的 M1 可独立订阅显示，网页可关闭。保持恢复最近一次已保存的输出，规则计时不跨重启恢复。
+
+### TC1 本地功率条件自动化
+
+- TC1 增加最多 8 条总功率条件规则，可对单路或全部插座执行开／关，支持高于／低于阈值及立即／持续触发。条件连续满足期间只执行一次，条件解除后重新计时；无效采样中断计时，本地按键优先。原有定时任务与二进制备份格式保留。
+
+### S30 Wi-Fi 扫描与配置升级
+
+- 修复 S30 扫描结果长度、释放与 STA 状态处理，保存配置完成后才执行延迟重启。新配置使用独立 PBL4，自动读取已识别的 PBL1／2／3 布局，保留网络、管理密码、双向配对、名称、计量倍率和累计量。连接清理保留 MQTT 认证／ACL 失败原因，便于排查断连。
+
+### 网页在线升级按钮与版本路径
+
+- 在线升级仅在检查成功、版本明确且确有可用更新时显示安装按钮，点击时再次核对状态；已是最新版、检查失败或信息缺失时不会安装。保留升级差异确认，并提示 0.9.x 经 1.0.0 升级至后续稳定版的路径。
+
+### 使用限制
+
+- M1、TC1 在多页面高并发下仍可能返回 busy；M1 的极端并发场景还可能发生连接重置。普通状态读取保持约 5 秒，避免额外开启密集轮询。
+- 中枢连续查询多台设备时也可能返回 busy；网页保留已有内容，后续读取恢复后更新。
+- S30 使用原生 RBL/STOCK_UA 文件；其他机型按型号与变体选择签名 OTA。M1 普通联网固件升级不更新传感器主控，HomeKit 桥接仍为实验功能。
+
+[RC5 下载与校验文件](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.5) · [按设备查看刷机与使用说明](https://phicomm-io.github.io/)
+
+## v1.0.0-rc.4
+
+**RC 实际属于 Beta 测试版本，稳定通道仍为 v0.9.27。** 本版整理已选择的二进制通信、状态缓存、中枢和网页优化，并新增 S30-V1B。使用前备份配置；设备固件、M1 传感器主控、网页与云平台分别发布。
+
+### HTTP、设备 MQTT 与 UDP 统一二进制接口
+
+- 设备业务默认使用 MessagePack，内部使用类型化参数视图和直接输出；不再保留旧 JSON 业务接口。Home Assistant 独立保留精简 JSON。升级时必须使用本版配套网页及支持发现协议的云平台；旧 JSON 调用方需改造。
+
+### 完整业务状态缓存与独立诊断
+
+- 完整状态保持可读；状态变化标记后合并编码，无变化时复用缓存。运行时、HTTP、面板及串口诊断通过 diagnostics.get 按需读取，采用所有设备共用的固定数字字段编号，缺失字段跳过。原生 MQTT 与 HA 分别记录发送进度，命令回执独立处理。
+
+### 减少重复读取并保留切页内容
+
+- 公共 HTTP 请求串行合并，优先写操作并进行有限确认；合并重复读取、取消过期只读请求并隔离旧响应，不取消已发出的写操作。联动页保留旧内容和未保存表单，成组数据原子更新；修复登录布局及 busy/503 处理。A1 本地刷新圆环动画，A1/M1 普通状态约每 5 秒读取，调速后短时加快确认。
+
+### 修复 busy 分类与 MQTT 内存回退
+
+- A1 将非法参数、版本冲突和存储失败与资源繁忙区分，避免误报 busy。修复 MQTT 缩小接收缓冲失败时的断连处理，保留订阅状态，避免重放保留的工作消息；TC1 二进制 MQTT 不再因消息包含 NUL 字节而拒收。HTTP 最多保留两个等待请求，过载仍有界返回。
+
+### mDNS 发现与经过配对的 UDP 通信
+
+- 内网业务使用统一二进制封包及有界参数解析，支持管理密码配对和已有 MQTT 下发传感器会话授权。同步请求仅借用输入数据，异步操作持有独立数据；精简 mDNS/UDP 的重复逻辑，同时保留发现、配对和重新发现路径。
+
+### 中枢移除内置 Broker，改用 mDNS 与 UDP
+
+- 中枢通过 mDNS 自动发现、UDP 配对及通信，提供统一网页设备管理，保留上游 MQTT、巴法云与实验性 HomeKit 桥接。本地 Home Assistant 及 MQTT 客户端须连接外部 Broker。修复配对存储、转发归属/关联、有限队列及空闲 HTTP 连接回收；旧内置 Broker 配置不能继续作为局域网连接入口。
+
+### 可选网页认证与受保护的配置迁移
+
+- 未设管理密码时直接进入网页且不占登录会话；设密码后使用 token 会话，保留 admin Basic 访问。密码变化、退出及重启按设备认证策略处理。已识别的 0.9.x 配置布局迁移保留原有设置；未知或无法可靠写入的布局进入配置恢复，不盲目覆盖。请在升级前备份，并按各机型迁移/恢复说明操作。
+
+### 精简资源、固定工具链与 iotcloud 主机名
+
+- 配套前端按设备能力裁剪，精简未用资源及格式化依赖；MXCHIP 发布构建使用固定 GCC14 编译器及原 GCC5 运行库，S30 使用 GCC5。DHCP 主机名使用 iotcloud、真实型号及本机有效工厂 MAC 尾号，A1/M1/TC1 协议身份统一为 openiot。
+
+### 新增 S30-V1B 计量插座与原厂免拆安装
+
+- 新增 ORVIBO S30-V1B（BL2028N/BK7231N/HLW8032）：复用公共网页与二进制 HTTP/MQTT/UDP，提供开关、功率/电压/电流/累计电量及持久化倍率设置。默认采用原厂分区布局，发布原生 RBL 和从 0x11000 写入的 STOCK_UA；原厂 2M.1220 已实测正常网络 OTA 首次安装，首次社区启动需重新配网。保留 S30M_V1B_ 热点前缀；灯语及 5 秒/10 秒松手恢复手势见操作说明。网页仅支持 URL OTA。
+
+### 下载与安装
+
+- [RC4 下载与校验文件](https://github.com/phicomm-io/iotcloud-community-firmware/releases/tag/v1.0.0-rc.4)；[S30-V1B 免拆与串口安装](https://phicomm-io.github.io/guides/s30-flash.html)；[S30-V1B 操作、灯语与倍率](https://phicomm-io.github.io/guides/s30-guide.html)。S30 的原生文件不套用其他设备的签名包；请严格按型号、变体与布局选择。
 
 ## v1.0.0-rc.3
 
-**RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议日常使用；日常使用推荐稳定版 v0.9.27。** 当前候选为 v1.0.0-rc.3。本版在 rc.2 基础上新增 A1 备用恢复手势，继续包含 rc、rc.1、rc.2 的功能与修复。下面按来源版本保留完整累计说明；继承内容不表示本次重新新增。旧候选不再作为下载入口，标签与原始历史记录保留。
+**Beta 测试版本；稳定版为 v0.9.27。** rc.3 在 rc.2 基础上新增 A1 备用恢复手势，继续包含此前候选版本的功能与修复。
 
 ### rc.3 本次新增：A1 备用恢复手势
 
@@ -12,17 +166,13 @@
 - 每次短按都要松手，相邻触碰间隔小于 0.3 秒；最后一次按住至少 1 秒、不足 5 秒，并在面板报告松开时才触发。备用手势绕过童锁，不执行本组连击或最终长按的自定义动作。原有 5 秒至不足 10 秒重置网络、至少 10 秒恢复出厂的松手手势继续保留。
 - 重置网络后需要重新配网；恢复出厂会清除用户设置。请按 [A1 恢复说明](https://phicomm-io.github.io/guides/a1-guide.html#恢复手势)操作，并先确认可以重新配网。
 
-### rc.3 验证与配套范围
+### rc.3 配套版本
 
-- A1 四种变体已用 GCC 5.4.1 完成本地构建并通过镜像门禁；主机按钮回归、ASan / UBSan 及旧 rc.2 负向对照通过。**新增手势尚未实机验收。** 本版按实际触摸状态识别手势，不伪造持续按下。
-- M1 配置恢复与网页恢复入口修复继承自 rc.2，配套前端保持已发布的 `6a92cc6`。这不增加未知第三方配置布局的自动迁移支持，也不表示反馈问题的 M1 已完成实机回归。
-- 联网固件、M1 传感器主控、前端与平台分别发布。测试 M1 v1 功能时使用联网固件 v1.0.0-rc.3、独立传感器主控 v1.0.0-rc 及配套前端；普通 Wi-Fi OTA 不更新传感器主控。HomeKit HAP 仍为实验功能，其配对、控制与重启恢复尚待真机验证，当前不包含 Matter。
-
-以下历史原文中的版本、验证状态及限制对应其来源发布时点。例如 rc.2 的“A1 长按另行排查”是该版的历史结论；rc.3 仅新增上面的备用手势，未宣称原触摸面板可持续上报 5 秒 / 10 秒按下。
+- 联网固件、M1 传感器主控、前端与平台分别发布。测试 M1 v1 功能时使用联网固件 v1.0.0-rc.3、独立传感器主控 v1.0.0-rc 及配套前端；普通 Wi-Fi OTA 不更新传感器主控。HomeKit HAP 仍为实验功能，当前不包含 Matter。
 
 ### 继承自 v1.0.0-rc.2（历史完整说明）
 
-**RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。** v1.0.0 的第三个候选版本，主要修复 M1 配置恢复和网页恢复入口，延续 rc.1 的功能与接口。
+**Beta 测试版本。** v1.0.0 的第三个候选版本，主要修复 M1 配置恢复和网页恢复入口，延续 rc.1 的功能与接口。
 
 #### M1 配置恢复
 
@@ -35,10 +185,10 @@
 - 完整网页与精简配网页在恢复过程中重新读取配置状态，清空后等待重启并在重连后退出旧的迁移提示。同一页面即可重新配网，普通刷新保留尚未保存的输入。
 - 清空请求提交后提示等待重启，防止重复提交；重启后仍需恢复时明确提示清空结果未确认，并允许重试。
 
-#### 范围与验证
+#### 已知限制
 
-- 本次修复不增加未知第三方配置布局的自动迁移支持。网页与实际 SDK 存储函数的主机回归已通过，反馈问题的 M1 仍待实机回归。
-- A1 的 Wi-Fi 触摸按键长按无响应另行排查，本版不宣称修复该问题。
+- 未知第三方配置布局仍需确认清空后重新配置。
+- A1 的 Wi-Fi 触摸按键长按无响应仍需另行排查。
 
 ### 继承自 v1.0.0-rc.1（历史完整说明）
 
@@ -99,7 +249,7 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 
 - 增加受网页密码保护的局域网完整配置备份 / 恢复，先校验机型、变体和配置版本。保留已支持旧配置的迁移路径；不支持的配置进入需确认的恢复模式，保留原存储。M1 传感器 MCU 音乐、HomeKit 配对资料分别保存，不包含在普通 Wi-Fi 配置备份中。
 - TC1 / A1 / M1 的设备升级页可直接查看并计算跨版本差异；资料不可用时说明原因并要求额外确认。M1 新显示能力先探测再启用，保留旧 API / UART 的兼容路径。
-- A1 / M1 的 EMW3080 release 分配保留底线统一为 8 KiB，测试验收门槛仍为 12 KiB；允许在 8–12 KiB 区间正常分配。
+- A1 / M1 的 EMW3080 release 内存分配保留底线调整为 8 KiB。
 - 整理 CI、Issue / PR 模板和贡献规范，明确接口、配置迁移与固定跨仓库依赖；归档 v0.9.x，维护代码采用 GPL-3.0，第三方许可保留。
 - 用户文档继续按 M1 / A1 / TC1 / 大金组织安装、升级、使用和恢复入口，保持原有 Pages 风格；接口、协议、配置兼容性与样例集中发布到[开发者文档](https://phicomm-io.github.io/iotcloud-community-protocols/)。
 
@@ -107,7 +257,7 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 
 ## v1.0.0-rc.2
 
-**RC 实际属于 Beta 测试版本，后续仍会有较大改动，不建议使用。** v1.0.0 的第三个候选版本，主要修复 M1 配置恢复和网页恢复入口，延续 rc.1 的功能与接口。
+**Beta 测试版本。** v1.0.0 的第三个候选版本，主要修复 M1 配置恢复和网页恢复入口，延续 rc.1 的功能与接口。
 
 ### M1 配置恢复
 
@@ -120,10 +270,10 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - 完整网页与精简配网页在恢复过程中重新读取配置状态，清空后等待重启并在重连后退出旧的迁移提示。同一页面即可重新配网，普通刷新保留尚未保存的输入。
 - 清空请求提交后提示等待重启，防止重复提交；重启后仍需恢复时明确提示清空结果未确认，并允许重试。
 
-### 范围与验证
+### 已知限制
 
-- 本次修复不增加未知第三方配置布局的自动迁移支持。网页与实际 SDK 存储函数的主机回归已通过，反馈问题的 M1 仍待实机回归。
-- A1 的 Wi-Fi 触摸按键长按无响应另行排查，本版不宣称修复该问题。
+- 未知第三方配置布局仍需确认清空后重新配置。
+- A1 的 Wi-Fi 触摸按键长按无响应仍需另行排查。
 
 ## v1.0.0-rc.1
 
@@ -184,7 +334,7 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 
 - 增加受网页密码保护的局域网完整配置备份 / 恢复，先校验机型、变体和配置版本。保留已支持旧配置的迁移路径；不支持的配置进入需确认的恢复模式，保留原存储。M1 传感器 MCU 音乐、HomeKit 配对资料分别保存，不包含在普通 Wi-Fi 配置备份中。
 - TC1 / A1 / M1 的设备升级页可直接查看并计算跨版本差异；资料不可用时说明原因并要求额外确认。M1 新显示能力先探测再启用，保留旧 API / UART 的兼容路径。
-- A1 / M1 的 EMW3080 release 分配保留底线统一为 8 KiB，测试验收门槛仍为 12 KiB；允许在 8–12 KiB 区间正常分配。
+- A1 / M1 的 EMW3080 release 内存分配保留底线调整为 8 KiB。
 - 整理 CI、Issue / PR 模板和贡献规范，明确接口、配置迁移与固定跨仓库依赖；归档 v0.9.x，维护代码采用 GPL-3.0，第三方许可保留。
 - 用户文档继续按 M1 / A1 / TC1 / 大金组织安装、升级、使用和恢复入口，保持原有 Pages 风格；接口、协议、配置兼容性与样例集中发布到[开发者文档](https://phicomm-io.github.io/iotcloud-community-protocols/)。
 
@@ -196,10 +346,9 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - M1 首页和定时闹钟支持四种内置短音选择与试听；同时检查主控版本 ≥0.9.3、扩展能力和 PWM 支持，旧主控保留原蜂鸣声。指定时间、每周执行、到期与手动停止继续有效。
 - M1 新增一首 RTTTL 自定义音乐：WebUI 可粘贴或导入文本、写入主控、读取回编辑框、播放和停止；保存后可选作闹钟曲目。最多 1024 ASCII 字节、256 音符、180 秒，存于 MCU 独立双槽数据区，重启和正常应用 OTA 后保留；需另行升级主控至 v0.9.3 并通过能力检测。音乐在部分音区偏小，本版不提供音量放大。
 - 配套 MCU v0.9.3 独立发布为开发预览，增加非阻塞 RTTTL 播放、四种短音和每秒一轮的时间冒号闪烁；主控固件不包含在 Wi-Fi OTA 中，网络升级仅更换应用、保留原厂 Bootloader。
-- 一台 M1 已完成候选 Wi-Fi/MCU 网络升级、旧主控门控、真实网页写入与逐字读回、播放/停止、音乐闹钟到期停止及再次主控 OTA 后曲目保留；用户确认发声。原有连接、CO₂、阈值及定时配置保持，阈值表单写入/还原通过主机回归；未进行真实掉电中断、声压/示波器、长期稳定性或其他型号实机验收。
-- DAIKIN 增加 CO₂ 模块诊断与手动校准：显示原始浓度、通信错误、超时和校准结果；兼容旧版 CM1106 保留状态字节，不再误判为预热。已知参考环境稳定至少两分钟后可填写 400～1500 ppm，需二次确认；超时标记结果未知，不自动重发，应答不等于精度验证。
+- DAIKIN 增加 CO₂ 模块诊断与手动校准：显示原始浓度、通信错误、超时和校准结果；兼容旧版 CM1106 保留状态字节，不再误判为预热。已知参考环境稳定至少两分钟后可填写 400～1500 ppm，需二次确认；超时标记结果未知，不自动重发，校准后用参考仪表检查读数。
 - DAIKIN 应用本机原厂温湿度补偿：温度减 4.9 °C；湿度按原始温度计算混合比，经 q × 0.8915 + 0.2632 修正，再按补偿后的温度还原为 0～100% 相对湿度；WebUI 可自定义温度减去值（默认 4.9 °C）及湿度微调（默认 0 %RH），支持恢复默认、持久化保存和读回确认；湿度随温度设置联动，并非固定原厂湿度偏移。
-- 一台 DAIKIN 候选已完成两次 OTA、配置保留及网页单次 410 ppm 校准应答与后续读数观测；补偿公式通过主机参考值和范围检查。正式签名包、新温湿度补偿的实机对照精度、冷启动与长期稳定性尚未验收。本次不重发 M1 MCU v0.9.4，Wi-Fi OTA 不包含主控升级。
+- Wi-Fi OTA 不包含 M1 传感器主控升级。
 
 ## v0.9.26
 
@@ -207,13 +356,11 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - M1 增加指定时间/每周闹钟、网页试听和停止入口；恢复原厂甲醛与 PM2.5 两档阈值写入及掉电保存，补齐负温度、传感器健康、主控版本和蜂鸣器控制。
 - M1 支持检测主控能力与 CO₂ 模组后配置实体屏幕：不替换、完全替换或按秒交替，选择甲醛/PM 数字位置及 CO₂ 两档阈值。需配套开源 MCU v0.9.2；四位浓度按千位小数显示，隐藏被替换位置的原污染物标识和单位。
 - 新增鉴权后的 M1 主控网络升级桥接及配套工具。MCU v0.9.2 恢复原厂采样/屏幕更新节奏、PM 接收与预热分支，提供阈值灯色/告警、0x70 扩展调试和 CO₂ 渲染；主控仍以开发预览版独立发布。
-- A1 新风版与 M1 已完成候选实机 OTA、配置保留、Wi-Fi/MQTT 恢复；通过滤芯模型切换不清零、主控网络 OTA/版本回读、CO₂ 两种替换模式读回、试听/停止及实际指定时间和每周闹钟触发测试。测试设置已恢复；未进行长时间稳定性、冷上电或示波器波形验收。
 - DAIKIN 在“设置 → 通用设置 → 指示灯规则”中支持为 CO₂、TVOC、PM 各配置最多两组阈值和常亮、常灭、快闪、慢闪。PM 灯可选择 PM2.5 或 PM10 数据源；检测到甲醛模块后可配置甲醛规则。规则重启保留，未命中或读数过期时熄灯。
 - DAIKIN Wi-Fi 灯统一指示系统状态：未配网三长三短、Wi-Fi 断开快闪、已配置 MQTT 未就绪慢闪、就绪常亮；独立于空气质量指示灯开关。
 - DAIKIN 恢复热点统一为 `BRY88AX151K-AP-<MAC末六位大写>`，IP 与网关均为 `192.168.0.1`。首次启动、按键恢复和断网重开使用同一配置；保留已保存的 Wi-Fi 与 MQTT 信息。
 - 大金新发布文件使用 `daikin_BRY88AX151K` 前缀，日常升级包为 `daikin_BRY88AX151K.ota.bin.signed`；历史归档保留原文件名。同步更新构建、签名、下载目录和中英文安装说明，并区分原厂免拆迁移附带的旧过渡镜像热点。
 - IotCloud 前端记住已添加到桌面的确认状态，修复 Safari 重复提示；从桌面以独立窗口打开时限制页面和设备子页面缩放。网站所有演示增加返回首页入口，更新大金设置演示及项目介绍，明确为已淘汰或云服务停止的 IoT 设备提供开源固件。
-- 大金候选已完成实机 OTA、原配置保留、Wi-Fi/MQTT 恢复、热点名称与自动关闭、六项传感器预热后读数及桌面/手机页面检查。未对本次正式签名包做逐字节实机验收，未重新刷写 TC1；真实 iPhone 桌面手势和实体灯闪烁测量未运行。
 
 ## v0.9.24
 
@@ -231,16 +378,15 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - 新风支持独立开关、手动和自动调速、PWM 极性及输出上下限映射，转速以 RPM 显示，每转脉冲数可设置，默认 2。
 - 可选择独立调速、按原风机比例限制新风，或由新风提高原风机最低转速；整机关机仍关闭两路。已有联动设置保持不变。
 - 原风机与新风自动设置合并到同一页，PM2.5、甲醛和 CO₂ 使用多选框；改善调速切换及受限时的自动控制，支持网页、MQTT 和 Home Assistant 新风实体。
-- 减少新风策略配置的临时内存分配和网页资源占用。内存保护仍保留 16 KiB；高负载下仍可能出现 busy，本版不承诺完全消除。
-- A1 新风候选已完成实机升级、配置保留和桌面/手机页面验证。未完成正式发布包逐字节实机验收、HA/HomeKit 配对或示波器电气测量；冷上电及引导阶段的关机电平不能保证。本次未刷写 M1、TC1。
+- 减少新风策略配置的临时内存分配和网页资源占用。内存保护仍保留 16 KiB；高负载时可能返回 busy。
+- 新风风机在冷上电及引导阶段的关机电平无法保证。
 - 新风完整版空间余量很小；另提供不含内置网页资源的新风精简版。0.9.x 为 beta 版本，升级前请备份重要配置。
 
 ## v0.9.21
 
 - 修复 M1 从原厂固件首次迁移时可能在启动阶段反复重启的问题，为原厂配置初始化提供足够的启动栈空间。
 - M1 原厂免拆迁移必须从 0.9.21 或更新版本开始；首次上传使用 M1 完整版原生 OTA 镜像，不能使用全量 Flash 镜像或社区签名封装。已运行社区固件的设备继续使用签名 OTA 包。
-- 修复候选已完成一台 M1 的原厂局域网 OTA、社区热点网页、重新配网、局域网访问及传感器通信验证。候选基于 0.9.19，仅增加启动栈；该结果不是 0.9.21 正式包的逐字节实机验收。未进行断电冷启动、A1、TC1 或公网 DNS 迁移验证。
-- 首次迁移后可能需要连接 M1-AP 热点重新配置 Wi-Fi；上传连接关闭不能单独证明成功，请按免拆指南核对社区版本和设备状态。
+- 首次迁移后可能需要连接 M1-AP 热点重新配置 Wi-Fi；按免拆指南核对社区版本和设备状态。
 - 0.9.x 为 beta 版本，升级前请保留重要配置备份。
 
 ## v0.9.20
@@ -249,7 +395,6 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - A1 新增彩色呼吸灯效：整圈灯光随呼吸明暗逐渐变换颜色，支持自定义亮度和动画速度，原有单色呼吸灯保持可选。
 - 修复 TC1 通过 MQTT／IotCloud 关闭插座后，Home Assistant 状态仍恢复为打开的问题；控制保存成功后刷新六路开关、总开关等状态，设备或插座重命名后重新发布发现配置。
 - IotCloud 修复 M1 卡片在四位气压读数下的溢出换行问题。公共 MQTT 服务补齐 Home Assistant 启动通知的发布权限，并同步更新已有账号，支持重新加载集成后触发设备重新发现。
-- 已完成 A1、TC1 候选固件实机升级与配置保留验证，覆盖灯效配置和关机状态、六路 MQTT 开关状态、重命名与重新发现。TC1 测试后恢复原有开关状态和设备名；本次未刷写 M1。
 - 0.9.x 为 beta 版本，升级前请保留重要配置备份。
 
 ## v0.9.19
@@ -259,7 +404,6 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - A1 不再主动转发每台 M1 的完整数据，只随自身状态上报自动控制需要的汇总值；页面同步精简，升级后清理旧的代理 Home Assistant 实体。需要每台 M1 的完整读数或 Home Assistant 实体时，请直接使用 M1。
 - M1 新增 BMP388／BMP390 气压数值的 MQTT 上报和 Home Assistant 实体，气压以 hPa 显示，传感器失联或数据过期时独立标记不可用。
 - A1 与 M1 必须配套升级至本版本，建议先升级 M1，再升级 A1；新会话建立和 M1 重启后的重新授权需要 MQTT。已有有效会话可在 MQTT 暂时断开时继续通过局域网读取，局域网读取失败时按离线联动策略处理。
-- 已完成 A1、M1 候选固件实机升级、局域网读取及两版只读负载对比，并通过三款设备完整版／精简版构建和主机回归。短时压测不代表长期稳定性验收，本次未进行 TC1 实机验收。
 - 0.9.x 为 beta 版本，升级前请保留重要配置备份。
 
 ## v0.9.18
@@ -268,14 +412,12 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - 统一 A1 本地按键、HTTP、MQTT 与自动化控制路径，减少按键处理中的内存分配和阻塞，保留童锁、自定义按键、风速及灯环行为。
 - TC1、A1 增加可选的设备直连巴法云接入，原 MQTT 与巴法云可分别开关、同时使用；保留现有连接与配置，M1 继续使用原接入方式。
 - 继续减少状态查询和内置网页的内存、空间开销，并在构建时检查 A1 升级包是否符合实际 OTA 暂存区容量。
-- A1、M1、TC1 的完整版与精简版构建及主机回归通过；已在 A1 实机刷入候选固件，核对配置保留、Wi-Fi、MQTT 与面板状态，并完成实体电源键短按、双击复测。本次未进行 TC1、M1 或巴法云实机验收。
 - 0.9.x 为 beta 版本，升级前请保留重要配置备份。
 
 ## v0.9.17
 
 - 修复 TC1 首次配置或恢复出厂设置后，已保存 MQTT 服务器却无法连接 IotCloud、Home Assistant 或自建 MQTT 服务的问题。
 - 适用于完整版与精简版；已有 Wi-Fi、MQTT、定时和插座设置保持不变。
-- 已在复现问题的 TC1 实机刷入修复固件，确认设备重新上线、持续上报状态并响应云端查询；本次未进行 A1、M1 实机验收。
 
 ## v0.9.16
 
@@ -313,7 +455,6 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - 定时任务新增“倒计时关闭”，可设置 1 分钟至 24 小时，显示剩余时间并支持取消、删除及重新计时，适用于手动和自动模式。
 - 倒计时独立于网络校时，关闭网页后仍继续；编辑或重新启用会从完整时长重新计时，设备重启会取消活动倒计时。
 - 本地网页与集中管理平台共用的 A1 页面提供上述设置；同步中英文说明，保留已有 CO₂ 联动及其他配置。
-- 本次通过主机自动化回归和 Chromium/WebKit 桌面、手机浏览器测试；未进行物理 A1 灯效、风机或升级验收。
 
 ## v0.9.12
 
@@ -368,7 +509,7 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 - 更新期间释放 A1/M1 联动线程及动态资源，MQTT/HTTP 保留升级状态与取消响应；日志字典节省 3584 B RAM，TC1 HTTP 栈缩减约 12 KiB。
 - 修复 TC1 签名 OTA 的启动槽校验，保留固件签名、型号及 Flash 读回校验。HTTPS 不校验证书，固件验签保持强制。
 - 汇总 v0.9.5 后主分支改进：A1 面板、风速环与触摸反馈修正，A1/M1 稳定性与关键线程看门狗，独立前端版本锁定、IotCloud 授权连接和中英文指南。
-- A1、M1、TC1 开发候选已通过普通负载 GitHub HTTPS 签名更新、重启、发布说明、取消、错误签名/篡改/截断及失败恢复验证。持续六客户端压力更新尚未通过完整验收：TC1 下载可中断，A1/M1 缺少完整成功提交证据。更新期间应减少并发访问；掉电及完整资源水位测试不在本次验收范围。
+- 升级期间减少并发访问；高并发可能导致下载中断。
 
 ## v0.9.5
 
@@ -390,12 +531,11 @@ v1.0.0 候选版本，包含设备固件、M1 传感器 MCU、WebUI 与云平台
 
 只有签名、Flash 读回摘要及兼容性检查通过后才启用新镜像。生产私钥位于仓库外，并通过受 v* tag 限制的 GitHub environment 使用。
 
-v0.9.3 已完成 M1 真机 Web/MQTT 拒绝及升级、重启恢复测试。本次 v0.9.4 未刷写设备；TC1/A1 真机、完整资源峰值及断电测试仍待验收。本版允许重装和降级，直链需直接 HTTP 200 + Content-Length。
-
+本版允许重装和降级，直链需直接 HTTP 200 + Content-Length。
 
 ## v0.9.3
 
-首个签名 OTA 版本，覆盖 TC1 A1、M1、A1。
+首个签名 OTA 版本，覆盖 TC1、M1、A1。
 
 - `.ota.bin.signed`：P-256/SHA-256 签名包，用于新固件 Web 默认上传及 MQTT/URL 安装。
 - `.ota.bin.raw`：原生 OTA。旧固件首次过渡请通过可信本地 Web 上传；新固件勾选“允许未签名的固件”后即可上传，无二次弹窗。
@@ -403,18 +543,13 @@ v0.9.3 已完成 M1 真机 Web/MQTT 拒绝及升级、重启恢复测试。本�
 
 CI 私钥位于仓库外，并只在受 tag 限制的 GitHub 签名环境中使用；仓库只含公钥。设备擦除前验证头部签名，Flash 读回 SHA-256 和兼容性检查通过后才启用镜像。
 
-M1 真机已验证 raw 过渡、Web raw/signed 上传、MQTT 坏签名/raw 拒绝及 signed 安装和重启恢复。TC1/A1 真机、完整资源峰值及断电/回退仍待验收。本版本允许重装和降级，URL 下载使用直接 HTTP 200 + Content-Length。
+本版本允许重装和降级，URL 下载使用直接 HTTP 200 + Content-Length。
 
-设计与验收记录：localdocs/ota-signed-update-v1.md；实现 PR #26。
-
-发布后已下载三型号 Release 产物，逐一验证 P-256 签名、签名摘要及 SHA256SUMS。M1 另通过 MQTT 安装了本 Release 的 CI 签名包，重启后运行 0.9.3-d50e93，MQTT 与传感器数据恢复正常。
-
+实现：[PR #26](https://github.com/phicomm-io/iotcloud-community-firmware/pull/26)。
 
 ## v0.9.2
 
-## M1 实机验证通过的可用版本
-
-本次将 **v0.9.2** 记录为原装 EMW3080B / MK3080B 模块 M1 的实机验证可用基线。源码为 `c1c8f542eb1f61c34fbc12abca5aad681b7ff257`（PR #3），固件显示版本为 `0.9.2-c1c8f5`。
+### M1 网页与 MQTT 改进
 
 ### 本次改动
 
@@ -422,28 +557,14 @@ M1 真机已验证 raw 过渡、Web raw/signed 上传、MQTT 坏签名/raw 拒�
 - 修正 Wi-Fi 与错误图标的通道映射和熄灭输出：正常连接时 Wi-Fi 常亮、错误标志灭；Wi-Fi 故障时两者同步闪烁；已配置 MQTT 连接异常时 Wi-Fi 常亮、仅错误标志两长两短，未配置 MQTT 不报 MQTT 故障。
 - 修复 MQTT 空闲超时误断线及 TCP 分包超过短 yield 期限引发的断线，增加错误计数与最近错误诊断。
 
-### M1 验证记录（2026-10-14）
-
-- 通过设备 Web API 完成 OTA，重启后恢复 Wi-Fi、MQTT 和有效传感器数据。
-- 真实设备提供温度、湿度、甲醛、PM2.5 四项读数。
-- 与 phicomm-community-mqtt 平台联调：账号主题自动发现、五项 HA 发现配置、网页亮度命令、设备设置值回执、独立 MQTT 客户端恢复亮度均通过；浏览器未出现页面错误。
-- 独立 MQTT 客户端连续观察 66 秒，收到 14 次真实传感器上报，无离线事件；Broker 重启后的自动恢复已验证。该观察不代表长期稳定性测试。
-- 用户已直接确认：短按屏幕亮灭正常；最终图标映射为 **Wi-Fi 常亮、错误标志灭**。
-- 主机测试、WebUI 测试及三款固件 CI 构建通过。
-
-实机验证最初使用同功能源码的开发构建（版本显示 `0.9.1-da45b9-dirty`）；Release 二进制由本标签 CI 构建，下载文件与校验值按本 Release 为准。
-
 ### 已知范围
 
-- Wi-Fi/MQTT 故障闪烁时序通过主机测试，实物故障灯效尚未逐项观察验证。
 - 实体长按重置、恢复出厂和重置网络尚未实现。
 - M1 原屏幕甲醛/PM2.5 彩色指示灯的阈值和手动颜色控制尚无已验证协议，当前不支持。
-- 本次实机可用结论只针对 M1；A1 空气净化器及 TC1（A1 硬件版本）附件通过构建，不代表本次完成其硬件验证。
 
 ### 下载
 
 M1 网页升级请选择 **phicomm_m1.ota.bin**，不要上传 `.all.bin`；按 `SHA256SUMS` 核对下载文件。升级保留 Wi-Fi、MQTT 与亮度配置。
-
 
 ## v0.9.1
 

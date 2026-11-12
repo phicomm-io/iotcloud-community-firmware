@@ -6,7 +6,25 @@
 #ifndef PH_HTTP_CLIENT_SLOTS
 #define PH_HTTP_CLIENT_SLOTS 4
 #endif
-#define PH_HTTP_STACK_BYTES 12288u
+#ifndef PH_HTTP_WAIT_SLOTS
+#define PH_HTTP_WAIT_SLOTS 2
+#endif
+#if PH_HTTP_WAIT_SLOTS < 1 || PH_HTTP_WAIT_SLOTS >= PH_HTTP_CLIENT_SLOTS
+#error HTTP waiting slots must fit behind the active connection
+#endif
+/* Charge the full SDK/crypto reserve in check_http_core.py for each model.
+ * TC1 has no A1 feature snapshot, so retaining its unused stack costs live
+ * network heap. M1 keeps its existing allocation pending separate validation. */
+#define PH_HTTP_DEFAULT_STACK_BYTES 12288u
+#define PH_HTTP_A1_STACK_BYTES 9216u
+#define PH_HTTP_TC1_STACK_BYTES 8192u
+#if defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 0
+#define PH_HTTP_STACK_BYTES PH_HTTP_A1_STACK_BYTES
+#elif defined(PHICOMM_STATUS_MODEL) && PHICOMM_STATUS_MODEL == 2
+#define PH_HTTP_STACK_BYTES PH_HTTP_TC1_STACK_BYTES
+#else
+#define PH_HTTP_STACK_BYTES PH_HTTP_DEFAULT_STACK_BYTES
+#endif
 #define PH_HTTP_HEADER_BYTES 4096u
 #define PH_HTTP_LINE_BYTES 512u
 #define PH_HTTP_HEADER_MS 5000u

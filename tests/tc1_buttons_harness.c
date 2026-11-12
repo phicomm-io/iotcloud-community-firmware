@@ -1,4 +1,4 @@
-/* Production gesture, automation, control, GPIO and JSON memory policy with
+/* Production gesture, automation, control, GPIO and binary memory policy with
  * host substitutes for the RTOS, Flash and physical pins. */
 #define AUTOMATION_TC1
 #define PHICOMM_DEVICE_OTA 1
@@ -6,6 +6,22 @@
 #define __MAIN_H_
 #define __USER_KEY_H_
 #include "mico.h"
+/* Synchronous RTOS substitute: the real service gate still enforces exclusive
+ * command/control ownership; this fixture never schedules concurrent callers. */
+typedef unsigned mico_semaphore_t;
+#define MICO_WAIT_FOREVER UINT32_MAX
+static int mico_rtos_init_semaphore(mico_semaphore_t *s, unsigned maximum) {
+    assert(maximum == 1); *s = 0; return kNoErr;
+}
+static int mico_rtos_set_semaphore(mico_semaphore_t *s) {
+    assert(!*s); *s = 1; return kNoErr;
+}
+static int mico_rtos_get_semaphore(mico_semaphore_t *s, uint32_t timeout) {
+    (void)timeout; if (!*s) return kUnknownErr; *s = 0; return kNoErr;
+}
+static int mico_rtos_deinit_semaphore(mico_semaphore_t *s) {
+    *s = 0; return kNoErr;
+}
 #define mico_rtos_delete_thread(thread) ((void)(thread))
 #include "common/automation.h"
 #include "common/gesture.h"
@@ -67,17 +83,21 @@ void tc1_config_release(void) { assert(reserved); reserved = false; }
 void ota_job_init(void) {}
 bool ota_job_active(void) { return ota_active; }
 bool ota_job_cancel(void) { return false; }
-json_object *ota_job_status(void) { return NULL; }
+void ota_job_status_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
 void automation_load(automation_config_t *out) { *out = config.automation; }
 bool automation_save(const automation_config_t *next) { config.automation = *next; return true; }
-json_object *service_product_capabilities(void) { return NULL; }
-json_object *service_product(const char *action, json_object *p, const char **code) {
-    (void)action; (void)p;
+void service_product_capabilities_mp(ph_writer *w, const char *const *extra, bool restricted) {
+    (void)extra; (void)restricted; phw_begin(w, NULL, false); phw_end(w);
+}
+void service_product_status_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+void service_product_info_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+void service_product_diagnostics_mp(ph_writer *w) { phw_begin(w, NULL, false); phw_end(w); }
+bool service_product_mp(const char *action, const ph_value *p, ph_writer *w, const char **code) {
+    (void)action; (void)p; (void)w;
     ++product_calls;
     *code = "busy";
-    return NULL;
+    return false;
 }
-#include "tests/stubs/status_wire.inc"
 
 static void *button_malloc(size_t size) {
     ++allocation_attempts;
@@ -107,6 +127,7 @@ void UserLedSet(char on);
 void UserLedRefresh(void);
 bool RelayOut(void);
 #include "TC1/control.c"
+bool PowerLocalSampleRead(uint32_t *mw){(void)mw;return false;}
 #undef malloc
 
 static void MicoGpioOutputHigh(unsigned pin) { assert(!state_locked); gpio_state[pin] = true; }
@@ -143,7 +164,9 @@ static void gestures(void) {
         for (unsigned low = 0; low < 2; ++low) {
             memory.free_memory = low ? 16000 : 65536;
             deny_allocations = low;
-            assert(json_heap_permit(1) == !low);
+            void *probe = ph_wire_malloc(1);
+            assert((probe != NULL) == !low);
+            ph_wire_free(probe);
             unsigned prior = saves;
             ha_refresh_pending = 0;
             tap(); sockets(true);
@@ -161,7 +184,7 @@ static void gestures(void) {
     }
 }
 static void control_failures(void) {
-    /* Continue with all button-path malloc calls rejected and JSON below its
+    /* Continue with all button-path malloc calls rejected and binary below its
      * reserve. The GPIO, persisted config and asynchronous refresh must agree. */
     unsigned prior = saves;
     reserved = true;
@@ -228,6 +251,21 @@ static void control_failures(void) {
     tap(); sockets(false);
     sample(true, 5200); sample(false, 600); assert(recoveries == 1);
     sample(true, 10200); sample(false, 600); assert(recoveries == 2);
+    /* Typed power rules share native admission and rollback, with no allocator
+     * or MQTT dependency. An edit after snapshot invalidates the old action. */
+    config.automation.tasks[0]=(automation_task_t){.id=77,.once=3,.enabled=1,.days=0,.at=100000,.last=10,
+        .action={.kind=AUTO_OUTLET,.target=2,.value=1}};
+    ph_power_rule rule,selected[PH_POWER_RULES_MAX];unsigned count;
+    assert(tc1_automation_load_power_rules(selected,&count)&&count==1);rule=selected[0];
+    test_now+=1500;fail_save=true;assert(!tc1_automation_power_execute(&rule));sockets(false);fail_save=false;
+    assert(tc1_automation_power_execute(&rule));assert(config.socket_status[2]&&gpio_state[relay[2]]);
+    config.automation.tasks[0].action.value=0;
+    assert(!tc1_automation_power_execute(&rule));assert(config.socket_status[2]);
+    assert(tc1_power_rule_from_task(&config.automation.tasks[0],&rule));
+    reserved=true;assert(!tc1_automation_power_execute(&rule));reserved=false;
+    ota_active=true;assert(!tc1_automation_power_execute(&rule));ota_active=false;
+    assert(tc1_automation_power_execute(&rule));sockets(false);
+    automation_power_manual_override();assert(power_states[0].rule.id==77&&power_states[0].trigger.fired);
     assert(!state_locked && !reserved && !product_calls && !allocation_attempts);
     assert(config.unrelated == 0x1234abcd);
     puts("PASS TC1 admission, persistence rollback, schedules, reboot and fixed recovery");

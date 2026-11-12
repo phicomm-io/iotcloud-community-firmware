@@ -1,0 +1,542 @@
+{
+  "schema": 1,
+  "encoding": "id-value-pairs",
+  "fields": [
+    {
+      "id": 1,
+      "path": "last_reset_reason"
+    },
+    {
+      "id": 2,
+      "path": "uptime_ms"
+    },
+    {
+      "id": 3,
+      "path": "uptime_seconds"
+    },
+    {
+      "id": 4,
+      "path": "free_memory"
+    },
+    {
+      "id": 5,
+      "path": "allocated_memory"
+    },
+    {
+      "id": 6,
+      "path": "free_memory_chunks"
+    },
+    {
+      "id": 7,
+      "path": "min_observed_free_memory"
+    },
+    {
+      "id": 8,
+      "path": "reset_reason"
+    },
+    {
+      "id": 9,
+      "path": "reset_reason_raw"
+    },
+    {
+      "id": 10,
+      "path": "watchdog_enabled"
+    },
+    {
+      "id": 11,
+      "path": "watchdog_state"
+    },
+    {
+      "id": 12,
+      "path": "watchdog_fault"
+    },
+    {
+      "id": 13,
+      "path": "http_accept_ok"
+    },
+    {
+      "id": 14,
+      "path": "http_accept_fail"
+    },
+    {
+      "id": 15,
+      "path": "http_accept_errno"
+    },
+    {
+      "id": 16,
+      "path": "http_accept_last_fd"
+    },
+    {
+      "id": 17,
+      "path": "http_accept_queue_ok"
+    },
+    {
+      "id": 18,
+      "path": "http_accept_queue_reject"
+    },
+    {
+      "id": 19,
+      "path": "http_accept_queue_last_rc"
+    },
+    {
+      "id": 20,
+      "path": "http_accept_busy_fcntl_fail"
+    },
+    {
+      "id": 21,
+      "path": "http_accept_busy_drained"
+    },
+    {
+      "id": 22,
+      "path": "http_accept_busy_send_ok"
+    },
+    {
+      "id": 23,
+      "path": "http_accept_busy_send_fail"
+    },
+    {
+      "id": 24,
+      "path": "http_accept_busy_send_errno"
+    },
+    {
+      "id": 25,
+      "path": "http_accept_busy_send_bytes"
+    },
+    {
+      "id": 26,
+      "path": "http_accept_overflow_close"
+    },
+    {
+      "id": 27,
+      "path": "http_accept_queue_capacity"
+    },
+    {
+      "id": 28,
+      "path": "http_tcp_limit_requested"
+    },
+    {
+      "id": 29,
+      "path": "http_tcp_limit_set_rc"
+    },
+    {
+      "id": 30,
+      "path": "http_tcp_limit_set_errno"
+    },
+    {
+      "id": 31,
+      "path": "http_tcp_limit_get_rc"
+    },
+    {
+      "id": 32,
+      "path": "http_tcp_limit_readback"
+    },
+    {
+      "id": 33,
+      "path": "http_tcp_connections_get_rc"
+    },
+    {
+      "id": 34,
+      "path": "http_tcp_connections"
+    },
+    {
+      "id": 35,
+      "path": "mqtt_errors"
+    },
+    {
+      "id": 36,
+      "path": "mqtt_last_error"
+    },
+    {
+      "id": 37,
+      "path": "ota_signature_verified"
+    },
+    {
+      "id": 38,
+      "path": "ota_image_verified"
+    },
+    {
+      "id": 39,
+      "path": "ota_key_id"
+    },
+    {
+      "id": 40,
+      "path": "ota_image_length"
+    },
+    {
+      "id": 41,
+      "path": "ota_release_counter"
+    },
+    {
+      "id": 42,
+      "path": "ota_version"
+    },
+    {
+      "id": 43,
+      "path": "panel_errors"
+    },
+    {
+      "id": 44,
+      "path": "hardware_errors"
+    },
+    {
+      "id": 45,
+      "path": "panel_last_error"
+    },
+    {
+      "id": 46,
+      "path": "panel_raw"
+    },
+    {
+      "id": 47,
+      "path": "rx_frames"
+    },
+    {
+      "id": 48,
+      "path": "unknown_frames"
+    },
+    {
+      "id": 49,
+      "path": "uart_errors"
+    },
+    {
+      "id": 50,
+      "path": "discarded_bytes"
+    },
+    {
+      "id": 51,
+      "path": "last_frame"
+    },
+    {
+      "id": 52,
+      "path": "sensor_health.pm25_raw"
+    },
+    {
+      "id": 53,
+      "path": "sensor_health.climate_raw"
+    },
+    {
+      "id": 54,
+      "path": "sensor_health.auxiliary_raw"
+    },
+    {
+      "id": 55,
+      "path": "scd40.serial"
+    },
+    {
+      "id": 56,
+      "path": "scd40.errors"
+    },
+    {
+      "id": 57,
+      "path": "scd40.last_error"
+    },
+    {
+      "id": 58,
+      "path": "scd40.samples"
+    },
+    {
+      "id": 59,
+      "path": "scd40.crc_errors"
+    },
+    {
+      "id": 60,
+      "path": "scd40.bus_initialized"
+    },
+    {
+      "id": 61,
+      "path": "scd40.last_command"
+    },
+    {
+      "id": 62,
+      "path": "scd40.error_phase"
+    },
+    {
+      "id": 63,
+      "path": "barometer.chip_id"
+    },
+    {
+      "id": 64,
+      "path": "barometer.address"
+    },
+    {
+      "id": 65,
+      "path": "barometer.samples"
+    },
+    {
+      "id": 66,
+      "path": "barometer.errors"
+    },
+    {
+      "id": 67,
+      "path": "barometer.attempts"
+    },
+    {
+      "id": 68,
+      "path": "barometer.last_error"
+    },
+    {
+      "id": 69,
+      "path": "bemfa_errors"
+    },
+    {
+      "id": 70,
+      "path": "bemfa_last_stage"
+    },
+    {
+      "id": 71,
+      "path": "bemfa_last_error"
+    },
+    {
+      "id": 72,
+      "path": "minimum_free_memory"
+    },
+    {
+      "id": 73,
+      "path": "max_free_block"
+    },
+    {
+      "id": 74,
+      "path": "ota_partitions"
+    },
+    {
+      "id": 75,
+      "path": "co2_diagnostics.protocol"
+    },
+    {
+      "id": 76,
+      "path": "co2_diagnostics.received"
+    },
+    {
+      "id": 77,
+      "path": "co2_diagnostics.fresh"
+    },
+    {
+      "id": 78,
+      "path": "co2_diagnostics.status_format"
+    },
+    {
+      "id": 79,
+      "path": "co2_diagnostics.status_flags_supported"
+    },
+    {
+      "id": 80,
+      "path": "co2_diagnostics.reserved_raw"
+    },
+    {
+      "id": 81,
+      "path": "co2_diagnostics.raw_ppm"
+    },
+    {
+      "id": 82,
+      "path": "co2_diagnostics.status_raw"
+    },
+    {
+      "id": 83,
+      "path": "co2_diagnostics.age_ms"
+    },
+    {
+      "id": 84,
+      "path": "co2_diagnostics.preheating"
+    },
+    {
+      "id": 85,
+      "path": "co2_diagnostics.sensor_error"
+    },
+    {
+      "id": 86,
+      "path": "co2_diagnostics.over_range"
+    },
+    {
+      "id": 87,
+      "path": "co2_diagnostics.under_range"
+    },
+    {
+      "id": 88,
+      "path": "co2_diagnostics.uncalibrated"
+    },
+    {
+      "id": 89,
+      "path": "co2_diagnostics.light_aging"
+    },
+    {
+      "id": 90,
+      "path": "co2_diagnostics.drift"
+    },
+    {
+      "id": 91,
+      "path": "co2_diagnostics.frame_errors"
+    },
+    {
+      "id": 92,
+      "path": "co2_diagnostics.response_timeouts"
+    },
+    {
+      "id": 93,
+      "path": "mqtt_last_event"
+    },
+    {
+      "id": 94,
+      "path": "mqtt_error_type"
+    },
+    {
+      "id": 95,
+      "path": "mqtt_socket_error"
+    },
+    {
+      "id": 96,
+      "path": "hub.clients"
+    },
+    {
+      "id": 97,
+      "path": "hub.max_clients"
+    },
+    {
+      "id": 98,
+      "path": "hub.retained_bytes"
+    },
+    {
+      "id": 99,
+      "path": "hub.refused"
+    },
+    {
+      "id": 100,
+      "path": "hub.dropped"
+    },
+    {
+      "id": 101,
+      "path": "hub.free_byte_heap"
+    },
+    {
+      "id": 102,
+      "path": "hub.largest_byte_block"
+    },
+    {
+      "id": 103,
+      "path": "hub.min_byte_heap"
+    },
+    {
+      "id": 104,
+      "path": "service_memory.reserved"
+    },
+    {
+      "id": 105,
+      "path": "service_memory.active"
+    },
+    {
+      "id": 106,
+      "path": "service_memory.denied"
+    },
+    {
+      "id": 107,
+      "path": "service_memory.waiting"
+    },
+    {
+      "id": 108,
+      "path": "service_memory.minimum_free"
+    },
+    {
+      "id": 109,
+      "path": "service_memory.mqtt_pending"
+    },
+    {
+      "id": 110,
+      "path": "service_memory.mqtt_peak"
+    },
+    {
+      "id": 111,
+      "path": "service_memory.mqtt_overflow"
+    },
+    {
+      "id": 112,
+      "path": "service_memory.mqtt_max_delay"
+    },
+    {
+      "id": 113,
+      "path": "service_memory.wire_alloc_failed"
+    },
+    {
+      "id": 114,
+      "path": "service_memory.wire_guard_denied"
+    },
+    {
+      "id": 115,
+      "path": "storage.nvs_free_entries"
+    },
+    {
+      "id": 116,
+      "path": "storage.nvs_used_entries"
+    },
+    {
+      "id": 117,
+      "path": "storage.nvs_total_entries"
+    },
+    {
+      "id": 118,
+      "path": "storage.required_entries"
+    },
+    {
+      "id": 119,
+      "path": "storage.old_blob_bytes"
+    },
+    {
+      "id": 120,
+      "path": "storage.new_blob_bytes"
+    },
+    {
+      "id": 121,
+      "path": "storage.last_error"
+    },
+    {
+      "id": 122,
+      "path": "config.recovery"
+    },
+    {
+      "id": 123,
+      "path": "config.source_version"
+    },
+    {
+      "id": 124,
+      "path": "config.auth_magic"
+    },
+    {
+      "id": 125,
+      "path": "config.auth_version"
+    },
+    {
+      "id": 126,
+      "path": "http_snapshot.unavailable"
+    },
+    {
+      "id": 127,
+      "path": "http_snapshot.expired"
+    },
+    {
+      "id": 128,
+      "path": "http_snapshot.contended"
+    },
+    {
+      "id": 129,
+      "path": "http_snapshot.allocation_failed"
+    },
+    {
+      "id": 130,
+      "path": "metering.received_bytes"
+    },
+    {
+      "id": 131,
+      "path": "metering.frames"
+    },
+    {
+      "id": 132,
+      "path": "metering.bad_frames"
+    },
+    {
+      "id": 133,
+      "path": "metering.discontinuities"
+    },
+    {
+      "id": 134,
+      "path": "status_cache_builds"
+    }
+  ]
+}

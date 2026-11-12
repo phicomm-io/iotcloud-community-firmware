@@ -2,7 +2,7 @@
 #include "mico.h"
 #include "client.h"
 #include "queue.h"
-#include "../busy_reply.h"
+#include "binary_busy.h"
 #include "../memory_budget.h"
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +76,7 @@ typedef struct {
     struct {
         mqtt_target_t target;
         const char *wire;
+        size_t length;
         void *owned;
         void(*release)(void *);
         char busy[SERVICE_BUSY_BYTES];
@@ -129,7 +130,7 @@ static __attribute__((noinline)) void ctx_ph_mqtt_resource_round_end(port_state 
 static __attribute__((noinline)) int ctx_ph_mqtt_publish(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
 static __attribute__((noinline)) int publish_owned(port_state *ctx, Client *c, const char *topic, MQTTMessage *m);
 static __attribute__((noinline)) int receipt_retry(port_state *ctx, Client *c);
-static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *));
+static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, size_t length, void *owned, void(*release_wire)(void *));
 static __attribute__((noinline)) void ctx_ph_mqtt_turn_begin(port_state *ctx, unsigned limit);
 static __attribute__((noinline)) void ctx_ph_mqtt_turn_end(port_state *ctx);
 static __attribute__((noinline)) uint32_t ctx_ph_mqtt_send_generation(port_state *ctx);
@@ -182,6 +183,14 @@ int mqtt_buffer_allocation_permit(Client *c, size_t bytes) {
     port_state *ctx=callback_port();
     return ctx_ph_mqtt_owner(ctx) && c == ctx->client && ctx->core.protocol_depth &&
         permit(NULL, bytes);
+}
+
+/* The SDK calls this only for required storage, never an optional shrink.
+ * Record no payload and preserve the first actual failure in this operation. */
+void mqtt_buffer_allocation_failed(Client *c, int admitted) {
+    port_state *ctx=callback_port();
+    if (ctx_ph_mqtt_owner(ctx) && c == ctx->client && ctx->core.protocol_depth && !ctx->cause)
+        ctx->cause = admitted ? PH_MQTT_CAUSE_ALLOCATION : PH_MQTT_CAUSE_HEAP_ADMISSION;
 }
 
 static void *allocate(void *p, size_t n) {
@@ -419,7 +428,7 @@ static void ingress(MessageData *d) {
     if (modern(ctx, topic, n))
         for (unsigned i = 0; i < 2; i++) if (!ctx->busy[i].used) {
         mqtt_target_set(&ctx->busy[i].target, ctx->account);
-        service_busy_id(m->payload, m->payloadlen, ctx->busy[i].id);
+        mqtt_busy_id(m->payload,m->payloadlen,ctx->busy[i].id);
         ctx->busy[i].used = true;
         return;
     }
@@ -556,10 +565,27 @@ static __attribute__((noinline)) int ctx_ph_mqtt_subscribe(port_state *ctx, Clie
     unsigned at = 0;
     while (at < MAX_MESSAGE_HANDLERS && ctx->subscriptions[at].filter && strcmp(ctx->subscriptions[at].filter, filter))
         at++;
-    int rc = at == MAX_MESSAGE_HANDLERS ? MQTT_FAILURE : MQTTSubscribe(c, filter, qos, ingress);
-    if (rc == MQTT_SUCCESS) {
-        ctx->subscriptions[at].filter = filter;
-        ctx->subscriptions[at].handler = handler;
+    int rc = MQTT_FAILURE;
+    if (at < MAX_MESSAGE_HANDLERS) {
+        bool provisional = !ctx->subscriptions[at].filter;
+        if (provisional) {
+            ctx->subscriptions[at].filter = filter;
+            ctx->subscriptions[at].handler = handler;
+        }
+        /* MQTT permits retained PUBLISH before SUBACK. Paho installs a new
+         * handler after SUBACK; its temporary default copies early input into
+         * our bounded queue. Business dispatch is forbidden in protocol_depth. */
+        messageHandler previous = c->defaultMessageHandler;
+        c->defaultMessageHandler = ingress;
+        rc = MQTTSubscribe(c, filter, qos, ingress);
+        c->defaultMessageHandler = previous;
+        if (rc == MQTT_SUCCESS) {
+            ctx->subscriptions[at].filter = filter;
+            ctx->subscriptions[at].handler = handler;
+        } else if (provisional) {
+            ph_mqtt_discard_route(&ctx->core, at);
+            memset(&ctx->subscriptions[at], 0, sizeof(ctx->subscriptions[at]));
+        }
     }
     return end(ctx, PH_MQTT_ERROR_SUBSCRIBE, rc);
 }
@@ -669,25 +695,26 @@ static __attribute__((noinline)) int receipt_retry(port_state *ctx, Client *c) {
     MQTTMessage m = {0};
     m.qos = QOS1;
     m.payload = (void *)ctx->receipt.wire;
-    m.payloadlen = strlen(ctx->receipt.wire);
+    m.payloadlen = ctx->receipt.length;
     int rc = publish_owned(ctx, c, topic, &m);
     if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
         receipt_clear(ctx);
     return rc;
 }
 
-static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) {
-    if (!ctx_ph_mqtt_owner(ctx) || !target || !wire || ctx->receipt.wire ||
-        (owned && !release_wire) || (!owned && strlen(wire) >= sizeof(ctx->receipt.busy))) {
+static __attribute__((noinline)) int ctx_ph_mqtt_receipt_send(port_state *ctx, const mqtt_target_t *target, const char *wire, size_t length, void *owned, void(*release_wire)(void *)) {
+    if (!ctx_ph_mqtt_owner(ctx) || !target || !wire || length>PH_MQTT_RECEIPT_BYTES || ctx->receipt.wire ||
+        (owned && !release_wire) || (!owned && length >= sizeof(ctx->receipt.busy))) {
         if (owned && release_wire) release_wire(owned);
         return MQTT_FAILURE;
     }
+    ctx->receipt.length = length;
     ctx->receipt.target = *target;
     ctx->receipt.owned = owned;
     ctx->receipt.release = release_wire;
     if (owned) ctx->receipt.wire = wire;
     else {
-        strcpy(ctx->receipt.busy, wire);
+        memcpy(ctx->receipt.busy, wire, length);
         ctx->receipt.wire = ctx->receipt.busy;
     }
     return receipt_retry(ctx, ctx->client);
@@ -733,11 +760,11 @@ static int send_emergency(port_state *ctx, Client *c) {
         char topic[MQTT_TOPIC_MAX], wire[SERVICE_BUSY_BYTES];
         if (!mqtt_target_leaf(&ctx->busy[i].target, "result", topic, sizeof(topic)))
             return MQTT_FAILURE;
-        service_busy_format(ctx->busy[i].id, wire);
+        size_t length=mqtt_busy_format(ctx->busy[i].id,wire);
         MQTTMessage m = {0};
         m.qos = QOS1;
         m.payload = wire;
-        m.payloadlen = strlen(wire);
+        m.payloadlen = length;
         ctx->busy_sending = i + 1;
         int rc = publish_owned(ctx, c, topic, &m);
         ctx->busy_sending = 0;
@@ -801,8 +828,8 @@ static __attribute__((noinline)) int ctx_ph_mqtt_poll(port_state *ctx, Client *c
                 char wire[SERVICE_BUSY_BYTES];
                 mqtt_target_t target;
                 mqtt_target_set(&target, ctx->account);
-                service_busy_wire(ph_mqtt_item_payload(i), i->length, wire);
-                rc = ctx_ph_mqtt_receipt_send(ctx, &target, wire, NULL, NULL);
+                size_t length=mqtt_busy_wire(ph_mqtt_item_payload(i),i->length,wire);
+                rc = ctx_ph_mqtt_receipt_send(ctx,&target,wire,length,NULL,NULL);
                 if (rc != PH_MQTT_NOT_STARTED_RESOURCE_DEFERRED)
                     ph_mqtt_item_release(&ctx->core, i);
                 if (rc < 0)
@@ -967,9 +994,10 @@ int ph_mqtt_publish(Client *c, const char *topic, MQTTMessage *m) { return ctx_p
 #ifdef PHICOMM_BEMFA
 int bm_publish(Client *c, const char *topic, MQTTMessage *m) { return ctx_ph_mqtt_publish(secondary_port, c, topic, m); }
 #endif
-int ph_mqtt_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(&primary_port, target, wire, owned, release_wire); }
+int ph_mqtt_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(&primary_port, target, wire, wire ? strlen(wire) : 0, owned, release_wire); }
+int ph_mqtt_receipt_send_bytes(const mqtt_target_t *target, const void *wire, size_t length, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(&primary_port, target, wire, length, owned, release_wire); }
 #ifdef PHICOMM_BEMFA
-int bm_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(secondary_port, target, wire, owned, release_wire); }
+int bm_receipt_send(const mqtt_target_t *target, const char *wire, void *owned, void(*release_wire)(void *)) { return ctx_ph_mqtt_receipt_send(secondary_port, target, wire, wire ? strlen(wire) : 0, owned, release_wire); }
 #endif
 void ph_mqtt_turn_begin(unsigned limit) { ctx_ph_mqtt_turn_begin(&primary_port, limit); }
 #ifdef PHICOMM_BEMFA
@@ -991,7 +1019,20 @@ int ph_mqtt_enqueue_send(const char *topic, const void *payload, size_t n, unsig
 #ifdef PHICOMM_BEMFA
 int bm_enqueue_send(const char *topic, const void *payload, size_t n, unsigned qos, bool retain) { return ctx_ph_mqtt_enqueue_send(secondary_port, topic, payload, n, qos, retain); }
 #endif
+bool ph_mqtt_input_admit(void) {
+    port_state *ctx=&primary_port;
+    return ctx_ph_mqtt_owner(ctx) && ctx->core.dispatch_depth && !ctx->core.protocol_depth &&
+        ph_mqtt_credit_replace(&ctx->core,PH_MQTT_RECEIPT_BYTES);
+}
 bool ph_mqtt_input_consumed(void) { return ctx_ph_mqtt_input_consumed(&primary_port); }
+bool ph_mqtt_query_consumed(size_t reply_bytes) {
+    port_state *ctx=&primary_port;
+    if (!ctx_ph_mqtt_owner(ctx) || !ctx->core.dispatch_depth || ctx->core.protocol_depth)
+        return false;
+    ph_mqtt_item_release(&ctx->core, ctx->core.inflight[PH_MQTT_COMMAND]);
+    return reply_bytes && reply_bytes <= PH_MQTT_RECEIPT_BYTES &&
+        ph_mqtt_credit_replace(&ctx->core, reply_bytes);
+}
 #ifdef PHICOMM_BEMFA
 bool bm_input_consumed(void) { return ctx_ph_mqtt_input_consumed(secondary_port); }
 #endif

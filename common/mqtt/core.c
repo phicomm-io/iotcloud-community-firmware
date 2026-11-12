@@ -265,6 +265,42 @@ void ph_mqtt_protocol_buffers(ph_mqtt_core *s, size_t rx, size_t tx) {
     unlock(s);
 }
 
+void ph_mqtt_discard_route(ph_mqtt_core *s, unsigned route) {
+    if (!ph_mqtt_is_owner(s) || s->dispatch_depth)
+        return;
+    lock(s);
+    bool accepting = s->accepting;
+    s->accepting = false;
+    ph_mqtt_item *discard = NULL;
+    ph_mqtt_item **next = &s->head[PH_MQTT_COMMAND], *previous = NULL;
+    while (*next) {
+        ph_mqtt_item *i = *next;
+        if (i->route != route) {
+            previous = i;
+            next = &i->next;
+            continue;
+        }
+        *next = i->next;
+        if (s->tail[PH_MQTT_COMMAND] == i)
+            s->tail[PH_MQTT_COMMAND] = previous;
+        s->bytes -= i->charge;
+        s->kind_bytes[PH_MQTT_COMMAND] -= i->charge;
+        --s->count[PH_MQTT_COMMAND];
+        i->next = discard;
+        discard = i;
+    }
+    unlock(s);
+    /* As in clear(), keep admissions closed across detached allocations. */
+    while (discard) {
+        ph_mqtt_item *i = discard;
+        discard = i->next;
+        s->hooks.release(s->hooks.context, i);
+    }
+    lock(s);
+    s->accepting = accepting;
+    unlock(s);
+}
+
 ph_mqtt_item *ph_mqtt_pop(ph_mqtt_core *s, unsigned kind) {
     if (kind > PH_MQTT_SEND || !ph_mqtt_is_owner(s) || s->protocol_depth)
         return NULL;

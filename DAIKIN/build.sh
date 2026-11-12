@@ -5,6 +5,7 @@ variant="${PHICOMM_FIRMWARE_VARIANT:-full}"
 case "$variant" in
   full) target=bry88ab ;;
   hub) target=bry88ab-hub ;;
+  g3) target=bry88bba15g ;;
   *) echo "Unsupported DAIKIN variant: $variant" >&2; exit 1 ;;
 esac
 export PHICOMM_FIRMWARE_VARIANT="$variant"

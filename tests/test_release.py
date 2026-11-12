@@ -17,14 +17,14 @@ class ReleaseTests(unittest.TestCase):
    stem=asset_stem(model,variant)
    for suffix in ['ota.bin.signed','ota.bin.raw','all.bin']:
     (root/f'{stem}.{suffix}').write_bytes((model+variant+suffix).encode())
-   if model=='daikin':
+   if model in ('daikin','bry88bba15g'):
     payload=bytearray(384)
     payload[0]=0xe9
     payload[32:36]=(0xabcd5432).to_bytes(4,'little')
-    payload[288:320]=b'BRY88AB151K'.ljust(32,b'\0')
+    payload[288:320]=(b'BRY88BBA15G' if model=='bry88bba15g' else b'BRY88AB151K').ljust(32,b'\0')
     payload[320:352]=('PHICOMM-DAIKIN-1:'+variant).encode().ljust(32,b'\0')
     (root/f'{stem}.ota.bin.raw').write_bytes(payload)
-    (root/f'{stem}.ota.bin.signed').write_bytes(verify.package.sign(bytes(payload),'daikin','v1.0.0','a'*40,key))
+    (root/f'{stem}.ota.bin.signed').write_bytes(verify.package.sign(bytes(payload),model,'v1.0.0','a'*40,key))
   return key,keyring
  def test_notes_boundaries(self):
   text='# Log\n## v0.9.5\n\n- A meaningful version-specific change.\n## v0.9.4\n\n- Previous version remains archived.\n'
@@ -67,10 +67,10 @@ class ReleaseTests(unittest.TestCase):
    (root/'phicomm_a1-no-frontend-resources.ota.bin.raw').write_bytes(b'fixture')
    (root/'daikin_BRY88AX151K.all.bin').unlink()
    with self.assertRaises(FileNotFoundError):make('v0.9.5','a'*40,root,'Notes',require_variants=True)
- def test_ten_current_variants_require_independent_complete_assets(self):
+ def test_eleven_current_variants_require_independent_complete_assets(self):
   current=list(targets('v1.0.0'))
-  self.assertEqual(len(current),10)
-  self.assertEqual(set(current)-set(targets('v0.9.24')),{('daikin','hub')})
+  self.assertEqual(len(current),11)
+  self.assertEqual(set(current)-set(targets('v0.9.24')),{('daikin','hub'),('bry88bba15g','full')})
   self.assertNotIn(('daikin','no-frontend-resources'),current)
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp)

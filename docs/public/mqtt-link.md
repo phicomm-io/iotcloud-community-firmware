@@ -4,14 +4,14 @@
 
 ## 选择 MQTT 模式
 
-在设备网页的 MQTT 设置中填写 Broker 地址、端口、用户名和密码。各设备的协议模式不同：
+在设备网页填写 Broker 地址、端口、用户名和密码。
 
-| 设备 | 支持的模式 |
+| 基线 | 设备协议 |
 | --- | --- |
-| **TC1** | 保留 Legacy（v1）与 TMCP（v2）两种模式，首次配置默认 TMCP |
-| **M1、A1、DAIKIN** | 固定使用 TMCP（v2）主题，不提供 Legacy 模式选择 |
+| **RC5** | TC1、M1、A1、DAIKIN、S30M-V1B 均使用 openiot 的 TMCP v2 命令封装，HTTP / MQTT 业务载荷为 MessagePack |
+| **0.9.27** | HTTP / TMCP 使用 JSON；TC1 可选择 Legacy v1 或 TMCP v2，M1 / A1 / DAIKIN 固定 TMCP v2；不含 S30M-V1B |
 
-M1 和 A1 会把旧配置中的模式标记在启动时归一化为 TMCP，同时保留 Broker 地址、端口、用户名和密码。运行时不会依据旧标记切回旧主题。
+自定义客户端先核对固件版本与编码，字段、主题和示例见[设备接口与协议](device-api)。Home Assistant 继续使用独立的 JSON 消息。
 
 设备主题为 `phicomm/v2/<scope>/<model>/<mac>/...`。非空用户名对应 `u_<UTF-8 字节的小写十六进制>`；空用户名使用 `local`，仍使用同一套 v2 协议。Home Assistant 发现配置发布到 `homeassistant/<component>/<scope>/<model>_<mac>_<entity>/config`。
 
@@ -31,7 +31,7 @@ M1、DAIKIN 等数据源负责检测、上报并应答已授权的读取；规�
 2. 双方连接同一 MQTT 服务与账号；平台需升级到支持通用传感器主题的版本。自建 Broker 需授权 `phicomm/v2/<scope>/sensor/<mac>/state` 发布、订阅，以及对应 `command` 会话授权。
 3. 确认需要的读数有效，再启用自动化。检测仪页面只将实际读取成功的 A1 显示为已连接。
 
-IP 留空时，A1 可通过局域网广播查找指定 MAC；跨网段或广播受限时填写可达 IP。A1 通过非 retained MQTT 发送会话 token，随后每五秒进行 UDP 查询，优先使用局域网读数。局域网不可用时可以使用通用 MQTT 测量；原有 M1 会话协议继续兼容。
+IP 留空时，A1 可通过局域网广播查找指定 MAC；跨网段或广播受限时填写可达 IP。A1 通过非 retained MQTT 发送会话 token，随后每五秒进行 UDP 查询，优先使用局域网读数。局域网不可用时可以使用通用 MQTT 测量；
 
 会话 token 只保存在 RAM。每台检测仪最多保留四台 A1 的会话，闲置三十分钟后过期；重启后 A1 自动重新通过 MQTT 授权。已建立且持续读取的 UDP 会话在 MQTT 暂时断开后仍可使用。
 

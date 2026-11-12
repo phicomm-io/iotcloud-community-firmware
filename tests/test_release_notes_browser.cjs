@@ -30,7 +30,9 @@ const {chromium}=require(process.env.PHICOMM_PLAYWRIGHT||'@playwright/test');
   }
   const page=await browser.newPage();await page.goto(base+'/');await page.locator('#archive .release').first().waitFor({state:'attached'});
   assert.equal(await page.locator('#archive .release').count(),releaseCount);assert.equal(await page.locator('#latest .release').count(),1);
-  await page.locator('#releases > details.collection > summary').first().click();
+  await page.locator('#download-tab-network').click();
+  assert.equal(await page.locator('#downloads-network').isVisible(),true);
+  await page.locator('#downloads-network > details.collection > summary').click();
   await page.locator('#archive .release > summary').first().click();
   await page.locator('#archive .release-notes > summary').first().click();
   assert.ok(await page.locator('#archive .notes').first().textContent());await page.close();cases++;

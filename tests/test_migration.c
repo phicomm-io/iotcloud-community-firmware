@@ -1,6 +1,5 @@
 #include "mico.h"
 #include "mico_system.h"
-#include "json.h"
 #include "../common/phicomm_features.h"
 void feature_defaults(feature_config_t *f){memset(f,0,sizeof(*f));f->magic=FEATURE_MAGIC;}
 #ifdef HOST_M1

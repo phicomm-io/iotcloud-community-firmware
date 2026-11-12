@@ -17,19 +17,15 @@ class Tc1CheckedNumberCalls(unittest.TestCase):
                            'static void OtaServerStatusHandler(')
         source = r'''
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 typedef enum {OTA_LOADING,OTA_SUCCE,OTA_FAIL} OTA_STATE_E;
 static float ota_progress=-2;
-static char str_mac[]="aabbccddeeff",line[128];
+static char line[128];
 static unsigned logs;
-static bool fail;
-static int json_number_format_fixed(char *out,unsigned size,double value,unsigned precision){
- if(fail)return -1;
- return snprintf(out,size,"%.*f",precision,value);
-}
 static void record_log(const char *format,...){
  va_list args;va_start(args,format);vsnprintf(line,sizeof(line),format,args);va_end(args);logs++;
 }
@@ -37,10 +33,14 @@ static void record_log(const char *format,...){
 '''+callback+r'''
 int main(void){
  OtaServerStatusHandler(OTA_LOADING,21.125f);
- assert(ota_progress==21.125f&&logs==1&&!strcmp(line,"ota server is loading, progress 21.12%"));
- fail=true;OtaServerStatusHandler(OTA_LOADING,31.125f);assert(ota_progress==31.125f&&logs==1);
- OtaServerStatusHandler(OTA_SUCCE,100);assert(ota_progress==100&&logs==2);
- OtaServerStatusHandler(OTA_FAIL,0);assert(ota_progress==-1&&logs==3);
+ assert(ota_progress==21.125f&&logs==1&&!strcmp(line,"ota server is loading, progress 21%"));
+ OtaServerStatusHandler(OTA_LOADING,31.125f);assert(ota_progress==31.125f&&logs==2&&!strcmp(line,"ota server is loading, progress 31%"));
+ OtaServerStatusHandler(OTA_LOADING,-1);assert(ota_progress==-1&&logs==2);
+ OtaServerStatusHandler(OTA_LOADING,101);assert(ota_progress==101&&logs==2);
+ OtaServerStatusHandler(OTA_LOADING,NAN);assert(isnan(ota_progress)&&logs==2);
+ OtaServerStatusHandler(OTA_LOADING,INFINITY);assert(isinf(ota_progress)&&logs==2);
+ OtaServerStatusHandler(OTA_SUCCE,100);assert(ota_progress==100&&logs==3);
+ OtaServerStatusHandler(OTA_FAIL,0);assert(ota_progress==-1&&logs==4);
  return 0;
 }
 '''

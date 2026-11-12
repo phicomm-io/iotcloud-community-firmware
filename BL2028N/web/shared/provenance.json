@@ -1,0 +1,17 @@
+{
+  "repository": "phicomm-io/phicomm-community-frontend",
+  "commit": "b30e7aa352ed612b02bf6680dc03e335f72c8ae0",
+  "source_dirty": false,
+  "path": "common/web",
+  "sha256": {
+    "appearance.js": "afdf9672e22338b82d1ac7ffa944e33cade436e4bd00b3a57ca8e45d710fb352",
+    "automation.js": "6a6dfc31a30ed79bbb64b4e1a4209c3153a604039a5b39a7e79f4319533848fe",
+    "diagnostics-schema.js": "89c47f5cbe3dbc9e1f4216e239be44b40f18b23dc1448f649ca5a191d14d24c1",
+    "i18n.js": "e612ae367edfd7239d84d542f081967708e17a3e51f08c9f81ba10af61ac27ae",
+    "provision.js": "f8a4d2e54b0ba8eaadd625ff3b8d956e7a312218f0f6df97a4385cf83a44dd95",
+    "service.js": "4b63085eceba274c371f79b681fa14471e42f769b7b7bbfefbb91777482248a8",
+    "style.css": "55bf48816dd8c455d519634e2273b0b1a23e1a13088c943e81ce6cb5c7a509fe",
+    "ui.js": "d1dc1e1e23d2a4560ceb66c387bdb74f050aafd1197eb5fdeaab31aeef3ac9f1"
+  },
+  "adaptations": "Shared binary auth, serialized reads, diagnostics and product capability gates; see frontend-openbeken.patch and lab-shared-source.json."
+}

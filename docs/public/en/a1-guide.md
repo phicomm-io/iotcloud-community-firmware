@@ -2,7 +2,7 @@
 
 A1 provides fan control, a light ring, child lock, night mode and automatic control using valid readings from M1, DAIKIN and other sensor providers. For first installation, see [A1 factory OTA](a1-no-disassembly) or [A1 wired recovery](a1-flash).
 
-**Use stable v0.9.27 for everyday operation. The current v1.0.0-rc.3 candidate is a beta build. Major changes are still expected, and daily use is not recommended.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
+**Use stable v0.9.27 for everyday operation, or v1.0.0-rc.6 for beta testing.** See the [complete candidate release notes](release-log.html?channel=candidate) for version requirements and cumulative changes.
 
 ## Power and fan
 
@@ -57,7 +57,7 @@ CO₂ defaults are 1500 ppm to start, 1000 ppm to idle and an 800–2000 ppm lin
 
 On A1, add each provider MAC and optional IP. Configure automatic speed range, offline speed, algorithm, debounce and minimum switching intervals, then select auto mode and turn on power. No manual A1 pairing identifier is needed on the monitor.
 
-A1 authorizes temporary sessions through the same MQTT account, prefers LAN UDP reads and can use generic MQTT measurements when LAN reads are unavailable. Existing M1 sessions remain compatible. PM2.5, formaldehyde, temperature and humidity expire after 15 seconds; CO₂ expires after 20 seconds. Replayed samples do not renew freshness. Each average includes only providers with valid data for that metric; absent data is `null`.
+A1 authorizes temporary sessions through the same MQTT account, prefers LAN UDP reads and can use generic MQTT measurements when LAN reads are unavailable.  PM2.5, formaldehyde, temperature and humidity expire after 15 seconds; CO₂ expires after 20 seconds. Replayed samples do not renew freshness. Each average includes only providers with valid data for that metric; absent data is `null`.
 
 Use updated firmware on both sides and Broker permissions for generic sensor topics. See [MQTT and automation](mqtt-link).
 
@@ -95,14 +95,14 @@ The Wi-Fi button performs recovery **on release**:
 
 A short pulse marks each full second held without changing saved lighting settings. It only indicates time; recovery never executes early. Recovery bypasses child lock. Ensure you can provision Wi-Fi again because factory reset clears user settings. A full reset is also available in the WebUI.
 
-Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. **v1.0.0-rc.3 adds** these alternatives (unavailable in rc.2 and earlier):
+Some original touch panels report release after about 2–3 seconds of continuous contact, preventing the longer holds above. **RC5 supports** these alternatives:
 
 | Wi-Fi button gesture | Action |
 | --- | --- |
 | Two short taps, then hold the third touch for 1–2 seconds and release | Reset network |
 | Three short taps, then hold the fourth touch for 1–2 seconds and release | Factory reset |
 
-Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. The new sequences passed host regressions and local builds and image checks for all four A1 variants; **physical acceptance is still pending**. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
+Release after each short tap and leave less than 0.3 seconds between touches. The final hold must last at least 1 second and less than 5 seconds. These reserved recovery sequences execute when the panel reports release, bypass child lock, and consume the preceding taps and final hold without running their custom actions. Separate click groups, standalone holds and two-button combinations remain available. These alternative sequences remain experimental. Factory reset clears user settings, so ensure you can provision Wi-Fi again.
 
 ## MQTT
 
