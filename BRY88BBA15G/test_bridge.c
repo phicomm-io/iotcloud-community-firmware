@@ -44,5 +44,9 @@ int main(void){
  n=screen_caps_offer(&peer,frame,sizeof(frame),458,supported);
  bry_bridge_feed(&b,frame,n);
  assert(b.extended&&b.session==458&&screen_caps_accept(&peer,sent,sent_size-2));
+ bry_bridge_reset(&b);
+ uint32_t legacy=supported&~(SCREEN_CAP_MEDIA|SCREEN_CAP_IMAGE|SCREEN_CAP_BINARY_LINK);
+ n=screen_caps_offer(&peer,frame,sizeof(frame),459,legacy);bry_bridge_feed(&b,frame,n);
+ assert(b.extended&&b.capabilities==legacy&&screen_caps_accept(&peer,sent,sent_size-2));
  puts("bridge: stock fallback, chunking, replay, session and overflow recovery passed");
 }

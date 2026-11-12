@@ -507,6 +507,10 @@ static void screenSync() {
     screenSyncDeadline = 0;
     return;
   }
+  if (!(screenBridge.capabilities & SCREEN_CAP_IMAGE))
+    for(unsigned i=0;i<screenScene.count;i++)if(screenScene.item[i].type==SC_IMAGE) {
+      screenSyncError="image_unsupported";return;
+    }
   if (!(screenBridge.capabilities & SCREEN_CAP_COMPACT_WIDGETS))
     for(unsigned i=0;i<screenScene.count;i++)if(scene_requires_compact(&screenScene.item[i])) {
       screenSyncError="responsive_unsupported";return;
@@ -639,6 +643,7 @@ static void screenServicesStatus(JsonObject s) {
   screenClockStatus(s.createNestedObject("clock"), screenSchedule.timezone);
 }
 static void screenServicesInit() {
+  screenMediaInit();
   screenStoreMutex = xSemaphoreCreateMutex();
   screenStoreAvailable = screenStoreMutex && screenOpenStorage();
   screenLoad();
@@ -652,12 +657,15 @@ static void screenServicesInit() {
 #include "screen_font.inc"
 #include "display_policy.inc"
 #include "weather_net.inc"
+#include "screen_media.inc"
+#include "screen_relay.inc"
 #include "screen_page.inc"
 #include "screen_diagnostics.inc"
 #include "screen_update_start.inc"
 #include "screen_commands.inc"
 // clang-format on
 static void screenServicesPoll(uint32_t now) {
+  screenMediaPoll(now);
   screenLayoutUpload.expire(now);
   screenModulePowerPoll(now);
   screenAppearancePoll();
@@ -672,7 +680,7 @@ static void screenServicesPoll(uint32_t now) {
     screenImage.pending = false;
     screenImage.state = "timeout";
   }
-  screenStartupPoll(now,screenImage.active||screenUploadBusy||screenFontBusy()||screenWallpaper.active||screenWallpaper.pending);
+  screenStartupPoll(now,screenMediaNegotiating()||screenImage.active||screenUploadBusy||screenFontBusy()||screenWallpaper.active||screenWallpaper.pending);
   screenImportArtifact();
   screenSync();
   screenWeatherPoll(now);

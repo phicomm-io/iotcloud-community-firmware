@@ -24,6 +24,7 @@ static void screenRuleJson(JsonObject o, const reminder_rule &r) {
 static const char *screenServicesCommand(const String &action,
                                          JsonObjectConst params,
                                          JsonObject data) {
+  if(action.startsWith("screen.link.")||action.startsWith("screen.media.")||action.startsWith("screen.push.")||action.startsWith("screen.stream."))return screenMediaCommand(action,params,data);
   if(action.startsWith("screen.calibration."))return screenCalibrationCommand(action,params,data);
   if(action=="screen.page.get"||action=="screen.page.set")return screenPageCommand(action,params,data);
   if(action.startsWith("screen.diagnostics."))return screenDiagCommand(action,params,data);
@@ -160,6 +161,10 @@ static const char *screenServicesCommand(const String &action,
       return "invalid_params";
     if (!(screenBridge.capabilities & SCREEN_CAP_COMPACT_WIDGETS))
       for(unsigned i=0;i<screenScene.count;i++)if(scene_requires_compact(&screenScene.item[i])) {
+        screenScene=*previous;return "unsupported";
+      }
+    if (!(screenBridge.capabilities & SCREEN_CAP_IMAGE))
+      for(unsigned i=0;i<screenScene.count;i++)if(screenScene.item[i].type==SC_IMAGE) {
         screenScene=*previous;return "unsupported";
       }
     display_policy previousPolicy = screenDisplayPolicy;

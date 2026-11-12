@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(bry88bba15g_bridge C CXX)
-add_library(bry_bridge protocol/appearance.c bridge.c protocol/screen_link.c protocol/screen_caps.c protocol/widgets.c protocol/scene.c protocol/services.c protocol/display_policy.c)
+add_library(bry_bridge protocol/media_wire.c protocol/appearance.c bridge.c protocol/screen_link.c protocol/screen_caps.c protocol/widgets.c protocol/scene.c protocol/services.c protocol/display_policy.c)
 target_compile_options(bry_bridge PRIVATE -Wall -Wextra -Werror)
 add_executable(test_bridge test_bridge.c)
 target_link_libraries(test_bridge PRIVATE bry_bridge m)

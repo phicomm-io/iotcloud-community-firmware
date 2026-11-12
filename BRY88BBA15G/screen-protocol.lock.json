@@ -1,19 +1,19 @@
 {
   "repository": "phicomm-io/iotcloud-bry88bba15g-screenmcu",
-  "state": "released",
+  "state": "development",
   "schema": 1,
   "files": {
     "protocol/screen_caps.c": "58271b158d042f6cdcfb41abb125978dc8eb3cb1723d0a4fcfd7fe83bea935fe",
-    "protocol/screen_caps.h": "706769c42bf4b54ffc584886db0f30fdca9c6daa32a302a48b119c6e82a67529",
+    "protocol/screen_caps.h": "12af3fc73a3f43ffe0c6e60908e5509aab2294947b659aba1831332d48386037",
     "protocol/screen_link.c": "2e6e9bcbec01d5df167ab533a3cbf599e7cc95c3030d403b6bbf659ec3fe0504",
     "protocol/screen_link.h": "790c53da4b7788fa83ea96a62a8493374623ae89632fcf70b91c0294de175a4d",
     "protocol/widgets.c": "6ab69c7d7f7a672098aca3510a51e86f1476abb47e0a1d8d9389d833b68c1ab1",
     "protocol/widgets.h": "9233109412dd2e8931a263d98ed06e9dc9b2dbe5b1d3e9a52f583fc274d34d71",
-    "protocol/scene.c": "518dc00b17d7fab9ab139ead2c06999211cfc743b7fb73ce7909993b58f865d9",
-    "protocol/scene.h": "6448e5b48d284c171e139d01a95037d3cfd41cb31d3b1b21b1206717638e84a7",
+    "protocol/scene.c": "8b6a6e81f88aff6c7735cd888bb96fbec0160629ce9f344da6776d005dfccfb9",
+    "protocol/scene.h": "5a376ec26722d98346a640db2885d52cc039d8391d3e649b2c8d556560cb603b",
     "protocol/services.c": "17da6d4705e0d27ca805a8a6111050692c92efe5f202137d1169bcbb3e6774c0",
     "protocol/services.h": "81c81f9d96e58206f05dd49ef6d1501b99d13a317d59bb41d7f40a076eeb74a8",
-    "protocol/guard.h": "0a4dc12999cf2227a7b07a903ee4e34fe18dc747e091e3ebac157ab1df7ea9ce",
+    "protocol/guard.h": "f3ec3f43ebca020e8f596b6963bd6be69f3f0a01d13a178d6ae48008818bcddc",
     "protocol/backlight.h": "c11b22178764b1d9fd50effed0b547d5912688790c2dee27fa1858a8ee6bf2d6",
     "protocol/display_policy.h": "98a27fb65b2f9acd637dee776664880aeb5fab9e12b62623399077de6ab61e25",
     "protocol/display_policy.c": "2d3fcd07ddf211f7d708377ed637e8053b6d8c5ca13549c978812e1d3fb4be7d",
@@ -23,7 +23,9 @@
     "protocol/wallpaper.h": "6505cd89c643121919891bbf43035032f64a885f16146f330d7f351d9ac8fe1e",
     "protocol/resources.h": "29c70e678d4d0022257837b7c8b4f2f7d590c6949bc76d45818b8f106a9404e6",
     "protocol/display_diag.h": "3528e75108e691b6d243c2087fc7e9c4dea80b835d01883675dad7491f167bef",
-    "protocol/page_control.h": "dcf0c15f7a9addc63513d1b57714f215deb51101529a8659ed28fee2126d92dc"
+    "protocol/page_control.h": "dcf0c15f7a9addc63513d1b57714f215deb51101529a8659ed28fee2126d92dc",
+    "protocol/media_wire.c": "319ee640c4326f832cbd0ba78783085c26e724b95e9b1d55a9cfb321ddfa76a0",
+    "protocol/media_wire.h": "39d4f779c9c500390d2740d1b9ead4bcad78ee92b5d3e6f2fac09b43fd366f35"
   },
   "source_paths": {
     "protocol/screen_link.c": "protocol/screen_link.c",
@@ -46,8 +48,9 @@
     "protocol/wallpaper.h": "include/wallpaper.h",
     "protocol/resources.h": "include/resources.h",
     "protocol/display_diag.h": "protocol/display_diag.h",
-    "protocol/page_control.h": "protocol/page_control.h"
+    "protocol/page_control.h": "protocol/page_control.h",
+    "protocol/media_wire.c": "protocol/media_wire.c",
+    "protocol/media_wire.h": "protocol/media_wire.h"
   },
-  "commit": "c95c03f5d65dcd015dc6baed00b32dd0f939aef9",
-  "release": "v1.0.0-rc.6"
+  "commit": "ff0e203377fda9f4905ce3d1f6446ec382779d20"
 }

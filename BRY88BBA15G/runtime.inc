@@ -10,6 +10,11 @@
 #include <esp_sleep.h>
 #include <time.h>
 #include "screen_clock.inc"
+static void screenMediaInit();
+static void screenMediaPoll(uint32_t);
+static bool screenMediaFeed(unsigned,uint32_t);
+static bool screenMediaAnnounce(const String &);
+static bool screenMediaNegotiating();
 static void screenServicesStatus(JsonObject);
 static void screenServicesInit();
 static void screenServicesPoll(uint32_t);
@@ -375,6 +380,7 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
   }
   String arg =
       end < n ? String((const char *)p + end + 1, n - end - 1) : String();
+  if (cmd == "screen_media") { screenMediaAnnounce(arg); return; }
   if (screenOtaCommand(cmd, arg))
     return;
   // Only command names are logged. Never echo Wi-Fi/password/JSON arguments.
@@ -574,9 +580,11 @@ static void pollSensors(uint32_t) { /* Samples arrive from the MCU, never probe
 }
 static void screenPoll(uint32_t now) {
   screenClockPoll(now);
-  size_t budget = 1024;
-  while (budget-- && screenUart.available())
-    stockFrame.feed(screenUart.read(), screenCommand);
+  size_t budget = 4096;
+  while (budget-- && screenUart.available()) {
+    unsigned c = screenUart.read();
+    if (!screenMediaFeed(c,now)) stockFrame.feed(c, screenCommand);
+  }
   if (!screenOtaActive() && screenHead != screenTail &&
       due(now, screenQueue[screenHead].at)) {
     const String &wire = screenQueue[screenHead].wire;

@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Prepare images and call the G3 MessagePack media API (msgpack, Pillow).
+
+IOTCLOUD_AUTH optionally supplies admin:password for the existing HTTP API.
+Camera passwords are read from G3_CAMERA_PASSWORD, never command-line arguments.
+Images and notifications are transient. Camera configuration survives ESP reboot.
+"""
+import argparse
+import base64
+import io
+import json
+import os
+from pathlib import Path
+import secrets
+import time
+import zlib
+
+from backup_screen_boot import Device
+
+
+def prepare(source, width=320, height=240):
+    from PIL import Image, ImageOps
+    if not 1 <= width <= 480 or not 1 <= height <= 854:
+        raise ValueError("Resolution must be 1..480 by 1..854")
+    with Image.open(source) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = ImageOps.pad(image, (width, height), color="black")
+        for quality in (85, 70, 55, 40, 25):
+            output = io.BytesIO()
+            image.save(output, format="JPEG", quality=quality, progressive=False,
+                       subsampling=2, optimize=False)
+            data = output.getvalue()
+            if len(data) <= 131072:
+                return data
+    raise ValueError("Image exceeds 128 KiB; choose a smaller resolution")
+
+
+def operation(device, action, params=None):
+    receipt = device.command(action, params)
+    sequence = receipt.get("request")
+    if sequence is None:
+        raise RuntimeError(f"{action}: missing MCU receipt")
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        state = device.command("screen.media.get")
+        request = state.get("request", {})
+        if request.get("sequence") != sequence:
+            raise RuntimeError("Another client replaced the current request; query media state")
+        if request.get("state") == "complete" and request.get("result") == 0:
+            return state
+        if request.get("state") in ("uncertain", "rejected"):
+            raise RuntimeError(f"{action}: {request['state']} ({request.get('result')})")
+        time.sleep(.08)
+    raise TimeoutError("MCU receipt timeout; query state before retrying")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--url", help="G3 HTTP origin, e.g. http://device")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("prepare", "push"):
+        p = sub.add_parser(name)
+        p.add_argument("--image", type=Path, required=name == "prepare")
+        p.add_argument("--width", type=int, default=320)
+        p.add_argument("--height", type=int, default=240)
+        if name == "prepare":
+            p.add_argument("--output", type=Path, required=True)
+        else:
+            p.add_argument("--id", type=int, default=secrets.randbelow(0xffffffff) + 1)
+            p.add_argument("--title", default="")
+            p.add_argument("--text", default="")
+            p.add_argument("--mode", choices=("timed", "confirm"), default="timed")
+            p.add_argument("--seconds", type=int, default=10)
+            p.add_argument("--no-wake", action="store_true")
+            p.add_argument("--brightness", type=int, default=30)
+    p = sub.add_parser("get")
+    p.add_argument("kind", choices=("media", "push", "stream", "link"), default="media", nargs="?")
+    p = sub.add_parser("dismiss")
+    p.add_argument("id", type=int)
+    p = sub.add_parser("link")
+    p.add_argument("--mode", choices=("fixed", "auto"), default="fixed")
+    p.add_argument("--rate", type=int, choices=(115200, 230400, 460800, 921600), default=115200)
+    p.add_argument("--max-rate", type=int, choices=(115200, 230400, 460800, 921600), default=921600)
+    p.add_argument("--apply-now", action="store_true", help="Restart screen MCU to negotiate in recovery")
+    p = sub.add_parser("stream")
+    p.add_argument("--source", required=True, help="HTTP(S) MJPEG URL; accepts {width}/{height}/{fps}")
+    p.add_argument("--username", default="")
+    p.add_argument("--width", type=int, default=320)
+    p.add_argument("--height", type=int, default=240)
+    p.add_argument("--fps", type=int, default=1)
+    p.add_argument("--insecure", action="store_true", help="Allow a source with a self-signed TLS certificate")
+    p.add_argument("--disabled", action="store_true")
+    sub.add_parser("start")
+    sub.add_parser("stop")
+    args = parser.parse_args()
+    if args.command == "prepare":
+        data = prepare(args.image, args.width, args.height)
+        args.output.write_bytes(data)
+        print(json.dumps({"file": str(args.output), "total": len(data),
+                          "crc32": zlib.crc32(data), "width": args.width, "height": args.height}))
+        return
+    if not args.url:
+        parser.error("--url is required for device commands")
+    device = Device(args.url)
+    if args.command == "get":
+        result = device.command(f"screen.{args.kind}.get")
+    elif args.command == "link":
+        result = device.command("screen.link.set", {"mode": args.mode, "rate": args.rate,
+                                "max_rate": args.max_rate, "apply_now": args.apply_now})
+    elif args.command == "stream":
+        params = {"url": args.source, "username": args.username, "width": args.width,
+                  "height": args.height, "fps": args.fps, "verify_tls": not args.insecure,
+                  "enabled": not args.disabled}
+        if "G3_CAMERA_PASSWORD" in os.environ:
+            params["password"] = os.environ["G3_CAMERA_PASSWORD"]
+        result = operation(device, "screen.stream.set", params)
+    elif args.command in ("start", "stop"):
+        result = operation(device, "screen.stream." + args.command)
+    elif args.command == "dismiss":
+        result = operation(device, "screen.push.dismiss", {"id": args.id})
+    else:
+        if (not 1 <= args.id <= 0xffffffff or len(args.title.encode()) > 64 or
+                len(args.text.encode()) > 512 or not 1 <= args.seconds <= 3600 or
+                not 1 <= args.brightness <= 100 or not (args.image or args.title or args.text)):
+            parser.error("Invalid push id, text, duration or brightness")
+        image_id = 0
+        try:
+            if args.image:
+                data = prepare(args.image, args.width, args.height)
+                image_id = args.id
+                operation(device, "screen.media.begin", {"id": image_id, "total": len(data),
+                          "crc32": zlib.crc32(data), "width": args.width, "height": args.height})
+                for offset in range(0, len(data), 512):
+                    operation(device, "screen.media.chunk", {"id": image_id, "offset": offset,
+                              "bytes": base64.b64encode(data[offset:offset+512]).decode()})
+                operation(device, "screen.media.commit", {"id": image_id})
+            result = operation(device, "screen.push.send", {"id": args.id, "image_id": image_id,
+                               "title": args.title, "text": args.text, "mode": args.mode,
+                               "duration_ms": args.seconds * 1000, "wake": not args.no_wake,
+                               "brightness": args.brightness})
+        except Exception:
+            if image_id:
+                try:
+                    operation(device, "screen.media.cancel", {"id": image_id})
+                except Exception:
+                    pass
+            raise
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

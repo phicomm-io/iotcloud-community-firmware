@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "phicomm-io/iotcloud-community-protocols",
-  "commit": "3aeb59607ed51233cc3e033f189ecda83c60ec90",
-  "registry_sha256": "a915bb2a9173fef503f165d77f6490bedd598815e4e2d55d236caafcc0a68bf3",
+  "commit": "27f7e4ec599abf00c55518bfc96a10a7e9256e9e",
+  "registry_sha256": "b998eb03dc734ec063f829ea0e7ad7b50122ad7aa853519c9c54fe779b474ff2",
   "contracts": [
     "device-http-v1",
     "tmcp-v2",
@@ -22,6 +22,7 @@
     "m1-display-v3",
     "m1-co2-source-v2",
     "sensor-values-v2",
-    "m1-display-v4"
+    "m1-display-v4",
+    "daikin-g3-media-v1"
   ]
 }
