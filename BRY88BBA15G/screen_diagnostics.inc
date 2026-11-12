@@ -36,7 +36,8 @@ static const char *screenDiagCommand(const String &action,JsonObjectConst params
       "flush_max_us","monitor_count","monitor_total_ms","monitor_pixels","stored","dropped",
       "offset","returned","draw_rows","frame_count","frame_period_us","frame_min_us",
       "frame_max_us","framebuffer","draw_buffer","draw_pixels","lcd_cr","core_hz",
-      "lcd_divider","horizontal_total","vertical_total","timer_hz","scan_source"};
+      "lcd_divider","horizontal_total","vertical_total","timer_hz","scan_source",
+      "render_flags","dma_flushes"};
     for(unsigned i=0;i<sizeof(keys)/sizeof(*keys);i++)data[keys[i]]=scene_u32(p+8+4*i);
     JsonArray records=data.createNestedArray("records");
     for(unsigned i=0;i<scene_u32(p+56);i++){
