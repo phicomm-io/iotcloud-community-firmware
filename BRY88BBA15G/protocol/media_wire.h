@@ -8,7 +8,16 @@
 #define MEDIA_JPEG_MAX (128u * 1024u)
 #define MEDIA_WIDTH_MAX 480u
 #define MEDIA_HEIGHT_MAX 854u
-#define MEDIA_QUEUE 4u
+#define MEDIA_QUEUE 16u
+#define MEDIA_IMAGE_SLOTS 4u
+#define MEDIA_STACK 4u
+#define MEDIA_HISTORY 16u
+#define MEDIA_STATUS_IMAGES 32u
+#define MEDIA_STATUS_QUEUE (MEDIA_STATUS_IMAGES + MEDIA_IMAGE_SLOTS * 17u)
+#define MEDIA_STATUS_HISTORY (MEDIA_STATUS_QUEUE + MEDIA_QUEUE * 9u)
+#define MEDIA_STATUS_BYTES (MEDIA_STATUS_HISTORY + MEDIA_HISTORY * 5u)
+#define MEDIA_STREAM_STATUS_BYTES 40u
+#define MEDIA_TAP_WINDOW_MS 350u
 /* Zero-delimited, escaped binary records are consumed before either text
  * parser. Header: GM, version, channel, boot session LE32, sequence LE32,
  * payload length LE16; CRC32 covers header and payload. No Flash writes. */
@@ -38,7 +47,8 @@ enum {
   MEDIA_QUERY,
   MEDIA_STREAM_CONFIG,
   MEDIA_STREAM_START,
-  MEDIA_STREAM_STOP
+  MEDIA_STREAM_STOP,
+  MEDIA_SELECT
 };
 enum {
   MEDIA_OK = 0,

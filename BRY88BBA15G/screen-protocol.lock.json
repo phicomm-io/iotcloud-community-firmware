@@ -25,7 +25,7 @@
     "protocol/display_diag.h": "3528e75108e691b6d243c2087fc7e9c4dea80b835d01883675dad7491f167bef",
     "protocol/page_control.h": "dcf0c15f7a9addc63513d1b57714f215deb51101529a8659ed28fee2126d92dc",
     "protocol/media_wire.c": "319ee640c4326f832cbd0ba78783085c26e724b95e9b1d55a9cfb321ddfa76a0",
-    "protocol/media_wire.h": "39d4f779c9c500390d2740d1b9ead4bcad78ee92b5d3e6f2fac09b43fd366f35"
+    "protocol/media_wire.h": "e9c98ef7696cb0946e3fc2f8fe9be2695d5f712798b6cd8d06959a0709948745"
   },
   "source_paths": {
     "protocol/screen_link.c": "protocol/screen_link.c",
@@ -52,5 +52,5 @@
     "protocol/media_wire.c": "protocol/media_wire.c",
     "protocol/media_wire.h": "protocol/media_wire.h"
   },
-  "commit": "ff0e203377fda9f4905ce3d1f6446ec382779d20"
+  "commit": "2853e952fc423fffd9b274fb6a995e36c7055895"
 }

@@ -77,6 +77,8 @@ def main():
     p.add_argument("kind", choices=("media", "push", "stream", "link"), default="media", nargs="?")
     p = sub.add_parser("dismiss")
     p.add_argument("id", type=int)
+    p = sub.add_parser("select")
+    p.add_argument("index", type=int, choices=range(5), help="0: normal page; 1..4: notification stack")
     p = sub.add_parser("link")
     p.add_argument("--mode", choices=("fixed", "auto"), default="fixed")
     p.add_argument("--rate", type=int, choices=(115200, 230400, 460800, 921600), default=115200)
@@ -104,6 +106,8 @@ def main():
     device = Device(args.url)
     if args.command == "get":
         result = device.command(f"screen.{args.kind}.get")
+    elif args.command == "select":
+        result = operation(device, "screen.push.select", {"index": args.index})
     elif args.command == "link":
         result = device.command("screen.link.set", {"mode": args.mode, "rate": args.rate,
                                 "max_rate": args.max_rate, "apply_now": args.apply_now})

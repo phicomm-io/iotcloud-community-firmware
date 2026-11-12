@@ -16,7 +16,8 @@ static struct {
   bool automatic = false, ready = false, attempted = false, pending = false;
   esp_pm_lock_handle_t apb = nullptr, sleep = nullptr;
   bool locked = false;
-  uint8_t command[MEDIA_PACKET_MAX] = {}, snapshot[172] = {},
+  uint8_t command[MEDIA_PACKET_MAX] = {},
+          snapshot[MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES] = {},
           streamConfig[519] = {};
   size_t commandSize = 0;
   uint32_t configuredSession = 0, lastId = 0;
@@ -77,9 +78,29 @@ static void screenMediaFallback() {
   }
 }
 static void screenMediaSnapshot(const uint8_t *p, size_t n) {
-  if (n != sizeof(screenMedia.snapshot))
+  if (n == 172) {
+    /* Transitional media firmware exposed four notices and no view selector. */
+    memset(screenMedia.snapshot, 0, sizeof(screenMedia.snapshot));
+    memcpy(screenMedia.snapshot, p, 22);
+    screenMedia.snapshot[28] = screenMedia.snapshot[29] = 4;
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_IMAGES, p + 24, 68);
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_HISTORY, p + 92, 40);
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_BYTES, p + 132, 40);
+    unsigned slot = 0;
+    for (unsigned i = 0; i < 8; i++) {
+      const uint8_t *item = p + 92 + i * 5;
+      if (item[4] == PUSH_QUEUED || item[4] == PUSH_DISPLAYED) {
+        uint8_t *q = screenMedia.snapshot + MEDIA_STATUS_QUEUE + slot++ * 9;
+        memcpy(q, item, 4);
+        q[8] = item[4];
+      }
+    }
+    screenMedia.snapshot[23] = slot;
+  } else if (n == sizeof(screenMedia.snapshot)) {
+    memcpy(screenMedia.snapshot, p, n);
+  } else {
     return;
-  memcpy(screenMedia.snapshot, p, n);
+  }
   invalidateBusinessStatusCache();
 }
 static void screenMediaPacket(void *, unsigned channel, uint32_t session,
@@ -305,6 +326,11 @@ static void screenMediaGet(JsonObject out, bool all = true) {
   out["decoded_images"] = media_u32(screenMedia.snapshot + 8);
   out["decode_errors"] = media_u32(screenMedia.snapshot + 12);
   out["pixel_crc32"] = media_u32(screenMedia.snapshot + 16);
+  out["view_index"] = screenMedia.snapshot[22];
+  out["queued"] = screenMedia.snapshot[23];
+  out["decoder_status"] = screenMedia.snapshot[24];
+  out["decoder_flags"] = screenMedia.snapshot[25];
+  out["decoder_ms"] = screenMedia.snapshot[26] | screenMedia.snapshot[27] << 8;
   JsonObject request = out.createNestedObject("request");
   request["sequence"] = screenMedia.request;
   request["id"] = screenMedia.lastId;
@@ -317,11 +343,14 @@ static void screenMediaGet(JsonObject out, bool all = true) {
   out["max_width"] = MEDIA_WIDTH_MAX;
   out["max_height"] = MEDIA_HEIGHT_MAX;
   out["chunk_bytes"] = MEDIA_CHUNK;
-  out["queue_capacity"] = MEDIA_QUEUE;
+  out["queue_capacity"] = screenMedia.snapshot[28];
+  out["image_capacity"] = MEDIA_IMAGE_SLOTS;
+  out["stack_capacity"] = screenMedia.snapshot[30];
   JsonArray images = out.createNestedArray("images"),
+            queue = out.createNestedArray("queue"),
             messages = out.createNestedArray("messages");
-  for (unsigned i = 0; i < 4; i++) {
-    const uint8_t *p = screenMedia.snapshot + 24 + 17 * i;
+  for (unsigned i = 0; i < MEDIA_IMAGE_SLOTS; i++) {
+    const uint8_t *p = screenMedia.snapshot + MEDIA_STATUS_IMAGES + 17 * i;
     if (!media_u32(p))
       continue;
     JsonObject image = images.createNestedObject();
@@ -331,8 +360,18 @@ static void screenMediaGet(JsonObject out, bool all = true) {
     image["crc32"] = media_u32(p + 12);
     image["state"] = p[16] == 2 ? "ready" : "uploading";
   }
-  for (unsigned i = 0; i < 8; i++) {
-    const uint8_t *p = screenMedia.snapshot + 92 + 5 * i;
+  for (unsigned i = 0; i < MEDIA_QUEUE; i++) {
+    const uint8_t *p = screenMedia.snapshot + MEDIA_STATUS_QUEUE + 9 * i;
+    if (!media_u32(p))
+      continue;
+    JsonObject msg = queue.createNestedObject();
+    msg["id"] = media_u32(p);
+    msg["image_id"] = media_u32(p + 4);
+    msg["state"] = screenPushState(p[8]);
+    msg["view_index"] = i < screenMedia.snapshot[30] ? i + 1 : 0;
+  }
+  for (unsigned i = 0; i < MEDIA_HISTORY; i++) {
+    const uint8_t *p = screenMedia.snapshot + MEDIA_STATUS_HISTORY + 5 * i;
     if (!media_u32(p))
       continue;
     JsonObject msg = messages.createNestedObject();
@@ -342,7 +381,7 @@ static void screenMediaGet(JsonObject out, bool all = true) {
 }
 static void screenStreamGet(JsonObject out) {
   const uint8_t *config = screenMedia.streamConfig,
-                *p = screenMedia.snapshot + 132;
+                *p = screenMedia.snapshot + MEDIA_STATUS_BYTES;
   out["available"] = screenMediaAvailable();
   out["enabled"] = (config[6] & 1) != 0;
   out["url"] = (const char *)config + 7;
@@ -479,6 +518,15 @@ static const char *screenMediaCommand(const String &action,
                                        : MEDIA_DISMISS;
     media_put32(p + 1, params["id"]);
     n = 5;
+  } else if (action == "screen.push.select") {
+    if (params.size() != 1 || !params["index"].is<unsigned>() ||
+        params["index"].as<unsigned>() > MEDIA_STACK)
+      return "invalid_params";
+    if (!screenMedia.snapshot[30])
+      return "unsupported";
+    p[0] = MEDIA_SELECT;
+    p[1] = params["index"].as<unsigned>();
+    n = 2;
   } else if (action == "screen.push.send") {
     if (!screenFields(params, "|id||image_id||title||text||duration_ms||mode||"
                               "wake||brightness|") ||
@@ -511,14 +559,13 @@ static const char *screenMediaCommand(const String &action,
       return "invalid_params";
     unsigned count = 0;
     bool known = false;
-    for (unsigned i = 0; i < 8; i++) {
-      const uint8_t *item = screenMedia.snapshot + 92 + 5 * i;
+    for (unsigned i = 0; i < MEDIA_HISTORY; i++) {
+      const uint8_t *item = screenMedia.snapshot + MEDIA_STATUS_HISTORY + 5 * i;
       if (media_u32(item) == id)
         known = true;
-      if (item[4] == PUSH_QUEUED || item[4] == PUSH_DISPLAYED)
-        count++;
     }
-    if (!known && count >= 4)
+    count = screenMedia.snapshot[23];
+    if (!known && count >= screenMedia.snapshot[28])
       return "busy";
     p[0] = MEDIA_PUSH;
     media_put32(p + 1, id);
