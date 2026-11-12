@@ -24,7 +24,7 @@
     "protocol/resources.h": "29c70e678d4d0022257837b7c8b4f2f7d590c6949bc76d45818b8f106a9404e6",
     "protocol/display_diag.h": "3528e75108e691b6d243c2087fc7e9c4dea80b835d01883675dad7491f167bef",
     "protocol/page_control.h": "dcf0c15f7a9addc63513d1b57714f215deb51101529a8659ed28fee2126d92dc",
-    "protocol/media_wire.c": "319ee640c4326f832cbd0ba78783085c26e724b95e9b1d55a9cfb321ddfa76a0",
+    "protocol/media_wire.c": "005c86dcc18aa7c7ff5d123d1764c2ff57c5b2667866c979130574c64e051fa5",
     "protocol/media_wire.h": "40b62ee2ecd36f473326dd8b64d11ee1edd64a418204ac0533948d8801b89d61"
   },
   "source_paths": {
@@ -52,5 +52,5 @@
     "protocol/media_wire.c": "protocol/media_wire.c",
     "protocol/media_wire.h": "protocol/media_wire.h"
   },
-  "commit": "41edad34c8dafe7262942a181fa0aeaeda61fd14"
+  "commit": "49c1a9e775582ff440c30a4d7bfb4c76f4b6de3d"
 }

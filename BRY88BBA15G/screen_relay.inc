@@ -9,6 +9,18 @@ struct ScreenRelayItem {
 };
 static QueueHandle_t screenRelayJobs = nullptr, screenRelayResults = nullptr;
 static TaskHandle_t screenRelayTask = nullptr;
+// One worker writes these aligned counters; status reads are diagnostic only.
+static volatile uint32_t screenRelayIdleWaits = 0, screenRelayPollWakeups = 0,
+                         screenRelayJobsHandled = 0;
+static volatile bool screenRelayIdleBlocked = false;
+static void screenRelayPowerStatus(JsonObject pm) {
+  pm["relay_worker_running"] = screenRelayTask != nullptr;
+  pm["relay_idle_blocked"] = screenRelayIdleBlocked;
+  pm["relay_idle_waits"] = screenRelayIdleWaits;
+  pm["relay_timed_poll_wakeups"] = screenRelayPollWakeups;
+  pm["relay_jobs_handled"] = screenRelayJobsHandled;
+}
+
 static struct {
   uint32_t connection = 0, sequence = 0, pendingSequence = 0, sent = 0,
            lastEvent = 0, lastSignature = 0, closing = 0;
@@ -34,7 +46,16 @@ static void screenRelayWorker(void *) {
   };
   for (;;) {
     ScreenRelayItem job;
-    if (xQueueReceive(screenRelayJobs, &job, pdMS_TO_TICKS(10)) == pdTRUE) {
+    // Without a socket or receive credit only a queued command can advance
+    // this owner. Sleep until that command rather than waking 100 times/s.
+    bool idle = !socket || !credit;
+    if (idle) screenRelayIdleWaits++;
+    screenRelayIdleBlocked = idle;
+    BaseType_t received = xQueueReceive(screenRelayJobs, &job,
+                                      idle ? portMAX_DELAY : pdMS_TO_TICKS(10));
+    screenRelayIdleBlocked = false;
+    if (received == pdTRUE) {
+      screenRelayJobsHandled++;
       if (job.op == MEDIA_NET_OPEN) {
         plain.stop();
         secure.stop();
@@ -82,6 +103,8 @@ static void screenRelayWorker(void *) {
           }
         }
       }
+    } else {
+      screenRelayPollWakeups++;
     }
     if (socket && credit) {
       int available = socket->available();

@@ -16,6 +16,7 @@ static bool screenMediaFeed(unsigned,uint32_t);
 static bool screenMediaAnnounce(const String &);
 static bool screenMediaNegotiating();
 static void screenServicesStatus(JsonObject);
+static void screenRelayPowerStatus(JsonObject);
 static void screenServicesInit();
 static void screenServicesPoll(uint32_t);
 static bool screenOtaCommand(const String &, const String &);
@@ -146,6 +147,7 @@ static void screenPowerStatus(JsonObject pm) {
   pm["mcu_wake_lock"] = screenWakeHeld;
   pm["uart_tx_lock"] = screenTxHeld;
   pm["last_wakeup_cause"] = unsigned(esp_sleep_get_wakeup_cause());
+  screenRelayPowerStatus(pm);
 }
 static void screenStatus(JsonObject out) {
   out["hardware_model"] = "BRY88BBA15G";
