@@ -291,6 +291,14 @@ static void pump(screen_maintenance &m) {
   }
 }
 int main(int argc, char **argv) {
+  screenImage.active = true;
+  for (const char *cmd : {"pub", "version?", "wifi_state?", "unknown", "screen_media"})
+    assert(!screenOtaCommandAllowed(cmd));
+  for (const char *cmd : {"bin_summary", "start_ota", "download_bin", ">", "end_ota",
+                           "cancel_ota", "screen_ota_error", "screen_image", "screen_recovery"})
+    assert(screenOtaCommandAllowed(cmd));
+  screenImage.active = false;
+  assert(screenOtaCommandAllowed("pub") && screenOtaCommandAllowed("version?"));
   screenOtaReplyError("pub", 0x43);
   assert(!strcmp(screenOtaErrorText(), "reply_pub_0043"));
   screenOtaReplyError("other", 1);
