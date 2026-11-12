@@ -419,8 +419,9 @@ void loop(){
   g3OnlinePoll();
   screenPoll(millis());
   screenPowerPoll(millis(),otaActive||screenUploadBusy||screenOtaActive()||g3OnlineBusy);
-  // Tickless idle needs at least three idle ticks. UART RX is interrupt buffered.
-  delay(10);
+  // Active stop-and-wait traffic needs prompt credit/ACK service. Keep the
+  // longer tickless idle interval when no media transfer owns the UART.
+  delay(screenMediaNeedsFastPoll()?1:10);
   #else
   delay(2);
   #endif

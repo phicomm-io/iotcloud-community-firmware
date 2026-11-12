@@ -144,6 +144,10 @@ static void screenRelayStop() {
   screenRelay.lastEvent = 0;
   screenRelay.lastSignature = 0;
 }
+static bool screenMediaNeedsFastPoll() {
+  return screenRelay.connection || screenRelay.closing || screenRelay.pending ||
+         screenMedia.pending || screenMedia.phase || screenOtaActive();
+}
 static void screenRelayPacket(unsigned channel, uint32_t sequence,
                               const uint8_t *p, size_t n) {
   if (n < 5)
