@@ -1,0 +1,35 @@
+# Merge these keys into configuration.yaml / automations.yaml as appropriate.
+rest_command:
+  g3_motion:
+    url: "http://SERVER_LAN_IP:8099/motion"
+    method: POST
+    headers:
+      Authorization: !secret g3_motion_authorization
+    content_type: "application/json"
+    payload: '{"camera":"door","active":true}'
+    timeout: 15
+
+automation:
+  - alias: G3 door motion preview
+    id: g3_door_motion_preview
+    mode: restart
+    triggers:
+      - trigger: mqtt
+        topic: frigate/door/motion
+        payload: "ON"
+      - trigger: mqtt
+        topic: frigate/door/motion
+        payload: "OFF"
+    actions:
+      - condition: template
+        value_template: "{{ trigger.payload == 'ON' }}"
+      - repeat:
+          sequence:
+            - action: rest_command.g3_motion
+              continue_on_error: true
+            - delay: "00:00:05"
+          until:
+            # Each OFF message restarts and stops this run. This maximum also
+            # bounds a lost OFF message; fresh ON starts another run.
+            - condition: template
+              value_template: "{{ repeat.index >= 120 }}"

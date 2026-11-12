@@ -39,8 +39,14 @@ static const char *screenUpdateStart(JsonObjectConst params) {
   screenImage.pending = false;
   screenImage.bootstrap = bootstrap;
   screenImage.offset = 0;
+  screenOtaError = "";
   screenImage.deadline = millis() + 60000;
   screenImage.state = "waiting_for_mcu";
+  if (!screenMediaQuiesce()) {
+    screenImage.active = false;
+    screenImage.state = "uart_busy";
+    return "busy";
+  }
   bool sent;
   if (bootstrap) {
     DynamicJsonDocument request(512);

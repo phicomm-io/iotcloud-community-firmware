@@ -21,7 +21,8 @@ enum {
   SC_BAR,
   SC_PIE,
   SC_WEATHER,
-  SC_REMINDERS
+  SC_REMINDERS,
+  SC_IMAGE
 };
 enum {
   SC_BIND_TEMP,
@@ -56,6 +57,7 @@ typedef struct {
   char text[193];
   uint8_t value_mode, hide_title;
   uint16_t points; /* 0 selects 32 points; local charts allow 32/64/128/256. */
+  uint8_t image_source, image_fit; /* SCN3 reserved bytes 86/87, stream 0. */
 } scene_item;
 typedef struct {
   uint32_t revision;
@@ -94,6 +96,7 @@ bool scene_data_receive(scene_data *, const uint8_t *, size_t, uint32_t);
 bool scene_series_receive(scene_data *, const uint8_t *, size_t, uint32_t);
 bool scene_data_fresh(const scene_data *, uint32_t);
 bool scene_utf8(const char *, size_t);
+bool scene_text_utf8(const char *, size_t);
 uint32_t scene_crc32(const void *, size_t);
 uint32_t scene_u32(const uint8_t *);
 void scene_put32(uint8_t *, uint32_t);

@@ -58,6 +58,7 @@ static bool utf8(const char *s, size_t cap, bool lines) {
   return i < cap;
 }
 bool scene_utf8(const char *s, size_t cap) { return utf8(s, cap, false); }
+bool scene_text_utf8(const char *s,size_t cap){return utf8(s,cap,true);}
 bool scene_requires_compact(const scene_item *c) {
   return c->h == 1 && ((c->type == SC_VALUE && c->w == 2) ||
          (c->w == 4 && (c->type == SC_CLOCK || c->type == SC_WEATHER)));
@@ -80,7 +81,7 @@ bool scene_validate(const screen_scene *s) {
     return false;
   for (unsigned i = 0; i < s->count; i++) {
     const scene_item *c = &s->item[i];
-    if (!c->id || c->page >= s->pages || c->type > SC_REMINDERS ||
+    if (!c->id || c->page >= s->pages || c->type > SC_IMAGE ||
         c->binding > SC_BIND_EXTERNAL || c->source > 2 || !c->w || !c->h ||
         c->x + c->w > 4 || c->y + c->h > 6 || ++counts[c->page] > 8 ||
         !scene_utf8(c->title, 49) || !scene_utf8(c->unit, 17))
@@ -92,7 +93,8 @@ bool scene_validate(const screen_scene *s) {
           c->chart > SC_CH_RING || c->series_count > SCENE_SERIES ||
           (c->hours && c->hours != 1 && c->hours != 6 && c->hours != 24) ||
           c->binding2 > SC_BIND_EXTERNAL || c->binding3 > SC_BIND_EXTERNAL ||
-          c->additive > 1 || !utf8(c->text, sizeof(c->text), true) ||
+          c->additive > 1 || c->image_source || c->image_fit>1 ||
+          (c->type!=SC_IMAGE&&c->image_fit) || !utf8(c->text, sizeof(c->text), true) ||
           (c->points&&c->points!=32&&c->points!=64&&c->points!=128&&c->points!=256) || c->hide_title > 1 || c->value_mode > SC_VALUE_GRADE ||
           (c->value_mode && c->type != SC_VALUE) ||
           (c->value_mode == SC_VALUE_GRADE && c->binding != SC_BIND_TVOC &&
@@ -187,6 +189,7 @@ bool scene_encode(const screen_scene *s, uint8_t out[SCENE_BYTES]) {
       p[13] = c->binding2; p[14] = c->binding3; p[15] = c->additive;
       memcpy(p + 88, c->text, 193);
       p[82] = c->value_mode; p[83] = c->hide_title; p[84]=c->points; p[85]=c->points>>8;
+      p[86]=c->image_source;p[87]=c->image_fit;
     }
   }
   return true;
@@ -217,6 +220,7 @@ bool scene_decode(screen_scene *s, const uint8_t *in, size_t n) {
       c->binding2 = p[13]; c->binding3 = p[14]; c->additive = p[15];
       memcpy(c->text, p + 88, 193);
       c->value_mode = p[82]; c->hide_title = p[83]; c->points=p[84]|p[85]<<8;
+      c->image_source=p[86];c->image_fit=p[87];
     }
   }
   ok = ok && scene_validate(next);

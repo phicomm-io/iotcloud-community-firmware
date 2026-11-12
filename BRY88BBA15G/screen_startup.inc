@@ -29,6 +29,7 @@ static const char *screenStartupSet(JsonObjectConst params,JsonObject out) {
   invalidateBusinessStatusCache();screenStartupGet(out);return "ok";
 }
 static void screenStartupPoll(uint32_t now,bool busy) {
+  now=millis();
   screenStartupSession();
   if(!screenStartupAuto||screenStartup.manual||screenStartup.attempted||busy||
      !screenGuardAvailable()||!screenGuard.activation||screenGuard.mode!=1||

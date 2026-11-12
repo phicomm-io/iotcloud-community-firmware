@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <ArduinoJson.h>
+#include "../screen_uart_handoff.h"
 extern "C" {
 #include "guard_service.h"
 #include "maintenance.h"
@@ -161,6 +162,7 @@ static void xSemaphoreGive(void *) {}
 static bool screenFontBusy() { return fontBusy; }
 static String screenRoot() { return "test-device"; }
 static unsigned deliveries;
+static bool screenMediaQuiesce() { return true; }
 static bool screenDelivery(const String &topic, JsonDocument &doc, unsigned attempts) {
   assert(topic == "test-device/mqtt/service/ota" && !attempts);
   assert(doc["data"]["upgrade_method"] == 1);
@@ -291,6 +293,35 @@ static void pump(screen_maintenance &m) {
   }
 }
 int main(int argc, char **argv) {
+  struct Port {
+    uint32_t now, next; unsigned received; bool continuous;
+    bool available() { return continuous || (received < 4 && int32_t(now - next) >= 0); }
+    int read() { ++received; next = now + 20; return 0; }
+  } port = {UINT32_MAX - 40, UINT32_MAX - 40, 0, false};
+  assert(bry::uartDiscardUntilQuiet(port, [&] { return port.now; },
+                                    [&](unsigned ms) { port.now += ms; }));
+  assert(port.received == 4 && uint32_t(port.now - port.next) == 10);
+  // Continuous traffic is bounded, including more than a complete RX buffer.
+  port = {0, 0, 0, true};
+  assert(!bry::uartDiscardUntilQuiet(port, [&] { return port.now; },
+                                     [&](unsigned ms) { port.now += ms; }));
+  assert(port.now == 500 && port.received == 8192u * 500u);
+  screenImage.active = true;
+  for (const char *cmd : {"pub", "version?", "wifi_state?", "unknown", "screen_media"})
+    assert(!screenOtaCommandAllowed(cmd));
+  for (const char *cmd : {"bin_summary", "start_ota", "download_bin", ">", "end_ota",
+                           "cancel_ota", "screen_ota_error", "screen_image", "screen_recovery"})
+    assert(screenOtaCommandAllowed(cmd));
+  screenImage.active = false;
+  assert(screenOtaCommandAllowed("pub") && screenOtaCommandAllowed("version?"));
+  screenOtaReplyError("pub", 0x43);
+  assert(!strcmp(screenOtaErrorText(), "reply_pub_0043"));
+  screenOtaReplyError("other", 1);
+  assert(!strcmp(screenOtaErrorText(), "reply_pub_0043"));
+  screenOtaError = "";
+  screenOtaReplyError("unsafe argument", 0x70);
+  assert(!strcmp(screenOtaErrorText(), "reply_unknown_0070"));
+  screenOtaError = "";
   testLinkReset();
   assert(!strlen(screenOtaErrorText()));
   screenImage.active=true;

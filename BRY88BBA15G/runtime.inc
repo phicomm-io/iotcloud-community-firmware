@@ -10,11 +10,19 @@
 #include <esp_sleep.h>
 #include <time.h>
 #include "screen_clock.inc"
+static void screenMediaInit();
+static void screenMediaPoll(uint32_t);
+static bool screenMediaFeed(unsigned,uint32_t);
+static bool screenMediaAnnounce(const String &);
+static bool screenMediaNegotiating();
 static void screenServicesStatus(JsonObject);
+static void screenRelayPowerStatus(JsonObject);
 static void screenServicesInit();
 static void screenServicesPoll(uint32_t);
 static bool screenOtaCommand(const String &, const String &);
 static bool screenOtaActive();
+static bool screenOtaCommandAllowed(const String &);
+static void screenOtaReplyError(const String &, unsigned);
 static bool screenBusinessSend(const char *, size_t);
 static bool screenGuardLine(const uint8_t *, size_t);
 static bool screenGuardAnnounce(const String &);
@@ -79,6 +87,7 @@ static bool screenSend(const String &line, uint32_t delayMs = 0) {
   return true;
 }
 static void screenReply(const String &cmd, bool ok = true, unsigned error = 1) {
+  if (!ok && screenOtaActive()) screenOtaReplyError(cmd, error);
   char suffix[32];
   if (ok)
     snprintf(suffix, sizeof(suffix), ":OK\r\n");
@@ -138,6 +147,7 @@ static void screenPowerStatus(JsonObject pm) {
   pm["mcu_wake_lock"] = screenWakeHeld;
   pm["uart_tx_lock"] = screenTxHeld;
   pm["last_wakeup_cause"] = unsigned(esp_sleep_get_wakeup_cause());
+  screenRelayPowerStatus(pm);
 }
 static void screenStatus(JsonObject out) {
   out["hardware_model"] = "BRY88BBA15G";
@@ -363,6 +373,9 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
   while (end < n && p[end] != ' ')
     ++end;
   String cmd((const char *)p, end);
+  // The maintenance receiver cancels on ERROR. Never answer a stale business
+  // line (including a damaged media frame) while raw OTA owns this UART.
+  if (!screenOtaCommandAllowed(cmd)) return;
   if (cmd == "pub") {
     size_t topicEnd = 4;
     while (topicEnd < n && p[topicEnd] != ' ')
@@ -375,6 +388,7 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
   }
   String arg =
       end < n ? String((const char *)p + end + 1, n - end - 1) : String();
+  if (cmd == "screen_media") { screenMediaAnnounce(arg); return; }
   if (screenOtaCommand(cmd, arg))
     return;
   // Only command names are logged. Never echo Wi-Fi/password/JSON arguments.
@@ -574,9 +588,15 @@ static void pollSensors(uint32_t) { /* Samples arrive from the MCU, never probe
 }
 static void screenPoll(uint32_t now) {
   screenClockPoll(now);
-  size_t budget = 1024;
-  while (budget-- && screenUart.available())
-    stockFrame.feed(screenUart.read(), screenCommand);
+  size_t budget = 4096;
+  while (budget-- && screenUart.available()) {
+    unsigned c = screenUart.read();
+    // Length-delimited stock publications own all payload bytes, including NUL.
+    if (stockFrame.binary || !screenMediaFeed(c,now))
+      stockFrame.feed(c, screenCommand);
+  }
+  // RX callbacks timestamp fresh announcements; use a tick after those writes.
+  now = millis();
   if (!screenOtaActive() && screenHead != screenTail &&
       due(now, screenQueue[screenHead].at)) {
     const String &wire = screenQueue[screenHead].wire;
