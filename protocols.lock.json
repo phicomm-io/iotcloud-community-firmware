@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "phicomm-io/iotcloud-community-protocols",
-  "commit": "182b410c33e6cdf04874e805d32fd63137951de6",
+  "commit": "3dcbb3233d5cb1b10d098cfd2e04d8c5528a473d",
   "registry_sha256": "b998eb03dc734ec063f829ea0e7ad7b50122ad7aa853519c9c54fe779b474ff2",
   "contracts": [
     "device-http-v1",

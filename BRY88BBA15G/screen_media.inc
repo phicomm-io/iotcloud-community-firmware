@@ -631,8 +631,9 @@ static const char *screenMediaCommand(const String &action,
                            (const char *)(screenMedia.streamConfig + 455);
     unsigned w = params["width"] | 320u, h = params["height"] | 240u,
              fps = params["fps"] | 1u;
+    bool clear = !url[0] && !(params["enabled"] | true);
     if (!w || w > 480 || !h || h > 854 || !fps || fps > 10 ||
-        !screenStreamUrl(url))
+        (!clear && !screenStreamUrl(url)))
       return "invalid_params";
     for (const char *key : {"username", "password"}) {
       if (params.containsKey(key) && !screenMediaString(params[key], 63))
@@ -658,8 +659,10 @@ static const char *screenMediaCommand(const String &action,
     if (params["verify_tls"] | true)
       p[6] |= 2;
     memcpy(p + 7, url, strlen(url));
-    memcpy(p + 391, username, strlen(username));
-    memcpy(p + 455, password, strlen(password));
+    if (!clear) {
+      memcpy(p + 391, username, strlen(username));
+      memcpy(p + 455, password, strlen(password));
+    }
     n = 519;
     if (screenMedia.pending)
       return "busy";
@@ -677,6 +680,8 @@ static const char *screenMediaCommand(const String &action,
     if (params.size())
       return "invalid_params";
     if (!screenMedia.streamConfig[0])
+      return "not_ready";
+    if (action.endsWith("start") && !screenMedia.streamConfig[7])
       return "not_ready";
     if (screenMedia.pending)
       return "busy";
