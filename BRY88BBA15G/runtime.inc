@@ -371,6 +371,9 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
     ++end;
   String cmd((const char *)p, end);
   if (cmd == "pub") {
+    // Raw OTA has exclusive UART ownership. A publication already buffered
+    // before the handoff must not insert either an ACK or an error reply.
+    if (screenOtaActive()) return;
     size_t topicEnd = 4;
     while (topicEnd < n && p[topicEnd] != ' ')
       ++topicEnd;
@@ -385,6 +388,9 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
   if (cmd == "screen_media") { screenMediaAnnounce(arg); return; }
   if (screenOtaCommand(cmd, arg))
     return;
+  // Damaged/stale media or business lines are not OTA commands. In particular,
+  // replying ERROR here would make the maintenance receiver cancel its image.
+  if (screenOtaActive()) return;
   // Only command names are logged. Never echo Wi-Fi/password/JSON arguments.
   bool logName = cmd.length() > 0 && cmd.length() <= 32;
   for (size_t i = 0; i < cmd.length(); ++i)
