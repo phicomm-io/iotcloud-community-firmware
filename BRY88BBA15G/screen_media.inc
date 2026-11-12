@@ -12,6 +12,9 @@ static struct {
   uint32_t target = 0, phaseAt = 0, deadline = 0, sequence = 0, request = 0,
            sent = 0;
   uint32_t fallback = 0, retries = 0, frames = 0;
+  uint32_t frameTimeouts = 0, frameFormats = 0, frameSize = 0,
+           frameDeclared = 0;
+  bool frameHeader = false;
   unsigned mode = 0, phase = 0, failedPhase = 0, attempts = 0, autoIndex = 0;
   bool automatic = false, ready = false, attempted = false, pending = false;
   esp_pm_lock_handle_t apb = nullptr, sleep = nullptr;
@@ -163,7 +166,20 @@ static void screenMediaPacket(void *, unsigned channel, uint32_t session,
 static bool screenMediaFeed(unsigned c, uint32_t now) {
   if (screenOtaActive())
     return false;
-  return media_feed(&screenMedia.parser, c, now);
+  media_parser &parser = screenMedia.parser;
+  uint32_t errors = parser.framing_errors;
+  bool timeout = parser.active && uint32_t(now - parser.at) > 1000;
+  bool consumed = media_feed(&parser, c, now);
+  if (parser.framing_errors != errors) {
+    if (timeout) ++screenMedia.frameTimeouts;
+    else ++screenMedia.frameFormats;
+    screenMedia.frameSize = parser.used;
+    screenMedia.frameHeader = parser.used >= 14 && parser.bytes[0] == 'G' &&
+                              parser.bytes[1] == 'M' && parser.bytes[2] == 1;
+    screenMedia.frameDeclared = parser.used >= 14 ?
+        unsigned(parser.bytes[12]) | unsigned(parser.bytes[13]) << 8 : 0;
+  }
+  return consumed;
 }
 static bool screenMediaAnnounce(const String &arg) {
   unsigned version, session, mode, mask, rate;
@@ -277,6 +293,12 @@ static void screenLinkGet(JsonObject out) {
   out["session"] = screenMedia.session;
   out["crc_errors"] = screenMedia.parser.crc_errors;
   out["framing_errors"] = screenMedia.parser.framing_errors;
+  JsonObject framing = out.createNestedObject("framing");
+  framing["timeouts"] = screenMedia.frameTimeouts;
+  framing["formats"] = screenMedia.frameFormats;
+  framing["last_size"] = screenMedia.frameSize;
+  framing["last_declared"] = screenMedia.frameDeclared;
+  framing["last_header_valid"] = screenMedia.frameHeader;
   out["retries"] = screenMedia.retries;
   out["fallbacks"] = screenMedia.fallback;
   out["frames"] = screenMedia.frames;
