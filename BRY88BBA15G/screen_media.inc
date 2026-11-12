@@ -39,7 +39,8 @@ static bool screenMediaQuiesce() {
 }
 static bool screenMediaWrite(unsigned channel, uint32_t seq, const void *p,
                              size_t n) {
-  uint8_t wire[2 * (MEDIA_PACKET_MAX + 18) + 2];
+  // Only the foreground UART owner calls this writer; keep it off task stacks.
+  static uint8_t wire[2 * (MEDIA_PACKET_MAX + 18) + 2];
   size_t size =
       media_encode(wire, sizeof(wire), channel, screenMedia.session, seq, p, n);
   return size && screenUartWrite(wire, size) == size;
@@ -107,12 +108,24 @@ static void screenMediaSnapshot(const uint8_t *p, size_t n) {
     for (unsigned i = 0; i < 8; i++) {
       const uint8_t *item = p + 92 + i * 5;
       if (item[4] == PUSH_QUEUED || item[4] == PUSH_DISPLAYED) {
-        uint8_t *q = screenMedia.snapshot + MEDIA_STATUS_QUEUE + slot++ * 9;
+        uint8_t *q = screenMedia.snapshot + MEDIA_STATUS_QUEUE + slot++ * MEDIA_STATUS_QUEUE_ITEM_BYTES;
         memcpy(q, item, 4);
         q[8] = item[4];
       }
     }
     screenMedia.snapshot[23] = slot;
+  } else if (n == 364 || n == 428) {
+    /* v2 used a 32-byte header, 9-byte queue entries and 40-byte stream status. */
+    memset(screenMedia.snapshot, 0, sizeof(screenMedia.snapshot));
+    memcpy(screenMedia.snapshot, p, 32);
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_IMAGES, p + 32, 68);
+    for (unsigned i = 0; i < MEDIA_QUEUE; i++)
+      memcpy(screenMedia.snapshot + MEDIA_STATUS_QUEUE + i * MEDIA_STATUS_QUEUE_ITEM_BYTES,
+             p + 100 + i * 9, 9);
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_HISTORY, p + 244, 80);
+    memcpy(screenMedia.snapshot + MEDIA_STATUS_BYTES, p + 324, 40);
+    if (n == 428)
+      memcpy(screenMedia.snapshot + MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES, p + 364, 64);
   } else if (n == MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES ||
              n == sizeof(screenMedia.snapshot)) {
     memset(screenMedia.snapshot, 0, sizeof(screenMedia.snapshot));
@@ -376,6 +389,10 @@ static void screenMediaGet(JsonObject out, bool all = true) {
   out["decoded_images"] = media_u32(screenMedia.snapshot + 8);
   out["decode_errors"] = media_u32(screenMedia.snapshot + 12);
   out["pixel_crc32"] = media_u32(screenMedia.snapshot + 16);
+  out["url_supported"] = (screenBridge.capabilities & SCREEN_CAP_URL_PUSH) != 0;
+  out["last_push_id"] = media_u32(screenMedia.snapshot + 32);
+  out["source_error"] = media_u32(screenMedia.snapshot + 36);
+  out["active_remaining_ms"] = media_u32(screenMedia.snapshot + 40);
   out["view_index"] = screenMedia.snapshot[22];
   out["queued"] = screenMedia.snapshot[23];
   out["decoder_status"] = screenMedia.snapshot[24];
@@ -414,12 +431,13 @@ static void screenMediaGet(JsonObject out, bool all = true) {
     image["state"] = p[16] == 2 ? "ready" : "uploading";
   }
   for (unsigned i = 0; i < MEDIA_QUEUE; i++) {
-    const uint8_t *p = screenMedia.snapshot + MEDIA_STATUS_QUEUE + 9 * i;
+    const uint8_t *p = screenMedia.snapshot + MEDIA_STATUS_QUEUE + MEDIA_STATUS_QUEUE_ITEM_BYTES * i;
     if (!media_u32(p))
       continue;
     JsonObject msg = queue.createNestedObject();
     msg["id"] = media_u32(p);
     msg["image_id"] = media_u32(p + 4);
+    msg["source"] = p[9] ? "url" : "upload";
     msg["state"] = screenPushState(p[8]);
     msg["view_index"] = i < screenMedia.snapshot[30] ? i + 1 : 0;
   }
@@ -456,6 +474,8 @@ static void screenStreamGet(JsonObject out) {
   out["error"] = media_u32(p + 24);
   out["actual_millifps"] = media_u32(p + 28);
   out["connection"] = media_u32(p + 36);
+  out["notification_id"] = media_u32(p + 40);
+  out["role"] = media_u32(p + 40) ? "notification" : "page";
 }
 /* Match the MCU URL grammar before persisting a source. Placeholders are
  * expanded only in the path, which keeps DNS/port validation deterministic. */
@@ -502,6 +522,48 @@ static bool screenStreamUrl(const char *source) {
     if ((unsigned char)*c <= 32 || (unsigned char)*c == 127 || *c == '#')
       return false;
   return true;
+}
+static const char *screenStreamPack(JsonObjectConst params, uint8_t *p,
+                                     bool notification) {
+  if (!screenMediaString(params["url"], 383)) return "invalid_params";
+  const char *url = params["url"], *username = params["username"] | "",
+         *password = params["password"] |
+               (notification ? "" : (const char *)(screenMedia.streamConfig + 455));
+  unsigned w = params["width"] | 320u, h = params["height"] | 240u,
+       fps = params["fps"] | 1u;
+  bool clear = !notification && !url[0] && !(params["enabled"] | true);
+  if (!w || w > 480 || !h || h > 854 || !fps || fps > 10 ||
+    (!clear && !screenStreamUrl(url)))
+    return "invalid_params";
+  for (const char *key : {"username", "password"}) {
+    if (params.containsKey(key) && !screenMediaString(params[key], 63))
+    return "invalid_params";
+  }
+  for (const char *field : {username, password})
+    for (const char *c = field; *c; c++)
+    if ((unsigned char)*c < 32 || (unsigned char)*c == 127)
+      return "invalid_params";
+  for (const char *key : {"width", "height", "fps"})
+    if (params.containsKey(key) && !params[key].is<unsigned>())
+    return "invalid_params";
+  for (const char *key : {"enabled", "verify_tls"})
+    if (params.containsKey(key) && !params[key].is<bool>())
+    return "invalid_params";
+  p[0] = MEDIA_STREAM_CONFIG;
+  p[1] = w;
+  p[2] = w >> 8;
+  p[3] = h;
+  p[4] = h >> 8;
+  p[5] = fps;
+  p[6] = (params["enabled"] | true) ? 1 : 0;
+  if (params["verify_tls"] | true)
+    p[6] |= 2;
+  memcpy(p + 7, url, strlen(url));
+  if (!clear) {
+    memcpy(p + 391, username, strlen(username));
+    memcpy(p + 455, password, strlen(password));
+  }
+  return "ok";
 }
 static const char *screenMediaCommand(const String &action,
                                       JsonObjectConst params, JsonObject out) {
@@ -582,7 +644,7 @@ static const char *screenMediaCommand(const String &action,
     n = 2;
   } else if (action == "screen.push.send") {
     if (!screenFields(params, "|id||image_id||title||text||duration_ms||mode||"
-                              "wake||brightness|") ||
+                              "wake||brightness||url||username||password||width||height||fps||verify_tls|") ||
         !params["id"].is<uint32_t>() || !params["id"].as<uint32_t>())
       return "invalid_params";
     const char *title = params["title"] | "", *text = params["text"] | "",
@@ -596,6 +658,10 @@ static const char *screenMediaCommand(const String &action,
         !scene_text_utf8(text, 513) ||
         (strcmp(mode, "timed") && strcmp(mode, "confirm")))
       return "invalid_params";
+    bool remote = params.containsKey("url");
+    if (remote && !(screenBridge.capabilities & SCREEN_CAP_URL_PUSH)) return "unsupported";
+    if (!remote) for (const char *key : {"username", "password", "width", "height", "fps", "verify_tls"})
+      if (params.containsKey(key)) return "invalid_params";
     uint32_t id = params["id"], image = params["image_id"] | 0u,
              duration = params["duration_ms"] | 10000u;
     unsigned brightness = params["brightness"] | 30u;
@@ -608,7 +674,7 @@ static const char *screenMediaCommand(const String &action,
          !params["brightness"].is<unsigned>()) ||
         !brightness || brightness > 100 || duration > 3600000 ||
         (!strcmp(mode, "timed") && !duration) ||
-        (!image && !title[0] && !text[0]))
+        (remote && image) || (!remote && !image && !title[0] && !text[0]))
       return "invalid_params";
     unsigned count = 0;
     bool known = false;
@@ -618,9 +684,15 @@ static const char *screenMediaCommand(const String &action,
         known = true;
     }
     count = screenMedia.snapshot[23];
-    if (!known && count >= screenMedia.snapshot[28])
+    if (!remote && !known && count >= screenMedia.snapshot[28])
       return "busy";
-    p[0] = MEDIA_PUSH;
+    unsigned body = 16;
+    if (remote) {
+      const char *packed = screenStreamPack(params, p + 16, true);
+      if (strcmp(packed, "ok")) return packed;
+      body += MEDIA_STREAM_CONFIG_BYTES;
+    }
+    p[0] = remote ? MEDIA_PUSH_URL : MEDIA_PUSH;
     media_put32(p + 1, id);
     media_put32(p + 5, image);
     media_put32(p + 9, duration);
@@ -629,52 +701,17 @@ static const char *screenMediaCommand(const String &action,
       p[13] |= 2;
     p[14] = brightness;
     p[15] = strlen(title);
-    memcpy(p + 16, title, strlen(title));
-    memcpy(p + 16 + strlen(title), text, strlen(text));
-    n = 16 + strlen(title) + strlen(text);
+    memcpy(p + body, title, strlen(title));
+    memcpy(p + body + strlen(title), text, strlen(text));
+    n = body + strlen(title) + strlen(text);
   } else if (action == "screen.stream.set") {
     if (!screenFields(params, "|url||username||password||width||height||fps||"
                               "enabled||verify_tls|") ||
         !screenMediaString(params["url"], 383))
       return "invalid_params";
-    const char *url = params["url"], *username = params["username"] | "",
-               *password = params["password"] |
-                           (const char *)(screenMedia.streamConfig + 455);
-    unsigned w = params["width"] | 320u, h = params["height"] | 240u,
-             fps = params["fps"] | 1u;
-    bool clear = !url[0] && !(params["enabled"] | true);
-    if (!w || w > 480 || !h || h > 854 || !fps || fps > 10 ||
-        (!clear && !screenStreamUrl(url)))
-      return "invalid_params";
-    for (const char *key : {"username", "password"}) {
-      if (params.containsKey(key) && !screenMediaString(params[key], 63))
-        return "invalid_params";
-    }
-    for (const char *field : {username, password})
-      for (const char *c = field; *c; c++)
-        if ((unsigned char)*c < 32 || (unsigned char)*c == 127)
-          return "invalid_params";
-    for (const char *key : {"width", "height", "fps"})
-      if (params.containsKey(key) && !params[key].is<unsigned>())
-        return "invalid_params";
-    for (const char *key : {"enabled", "verify_tls"})
-      if (params.containsKey(key) && !params[key].is<bool>())
-        return "invalid_params";
-    p[0] = MEDIA_STREAM_CONFIG;
-    p[1] = w;
-    p[2] = w >> 8;
-    p[3] = h;
-    p[4] = h >> 8;
-    p[5] = fps;
-    p[6] = (params["enabled"] | true) ? 1 : 0;
-    if (params["verify_tls"] | true)
-      p[6] |= 2;
-    memcpy(p + 7, url, strlen(url));
-    if (!clear) {
-      memcpy(p + 391, username, strlen(username));
-      memcpy(p + 455, password, strlen(password));
-    }
-    n = 519;
+    const char *packed = screenStreamPack(params, p, false);
+    if (strcmp(packed, "ok")) return packed;
+    n = MEDIA_STREAM_CONFIG_BYTES;
     if (screenMedia.pending)
       return "busy";
     Preferences saved;

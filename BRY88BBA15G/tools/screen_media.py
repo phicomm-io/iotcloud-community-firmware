@@ -3,7 +3,7 @@
 
 IOTCLOUD_AUTH optionally supplies admin:password for the existing HTTP API.
 Camera passwords are read from G3_CAMERA_PASSWORD, never command-line arguments.
-Images and notifications are transient. Camera configuration survives ESP reboot.
+Images, URL sources and notifications are transient. Camera configuration survives ESP reboot.
 """
 import argparse
 import base64
@@ -66,6 +66,10 @@ def main():
         if name == "prepare":
             p.add_argument("--output", type=Path, required=True)
         else:
+            p.add_argument("--source", help="HTTP(S) JPEG/MJPEG URL (exclusive with --image)")
+            p.add_argument("--username", default="")
+            p.add_argument("--fps", type=int, default=1)
+            p.add_argument("--insecure", action="store_true")
             p.add_argument("--id", type=int, default=secrets.randbelow(0xffffffff) + 1)
             p.add_argument("--title", default="")
             p.add_argument("--text", default="")
@@ -125,7 +129,8 @@ def main():
     else:
         if (not 1 <= args.id <= 0xffffffff or len(args.title.encode()) > 64 or
                 len(args.text.encode()) > 512 or not 1 <= args.seconds <= 3600 or
-                not 1 <= args.brightness <= 100 or not (args.image or args.title or args.text)):
+                not 1 <= args.brightness <= 100 or not (args.image or args.source or args.title or args.text) or
+                (args.image and args.source) or not 1 <= args.fps <= 10):
             parser.error("Invalid push id, text, duration or brightness")
         image_id = 0
         try:
@@ -138,10 +143,16 @@ def main():
                     operation(device, "screen.media.chunk", {"id": image_id, "offset": offset,
                               "bytes": base64.b64encode(data[offset:offset+512]).decode()})
                 operation(device, "screen.media.commit", {"id": image_id})
-            result = operation(device, "screen.push.send", {"id": args.id, "image_id": image_id,
+            params = {"id": args.id, "image_id": image_id,
                                "title": args.title, "text": args.text, "mode": args.mode,
                                "duration_ms": args.seconds * 1000, "wake": not args.no_wake,
-                               "brightness": args.brightness})
+                               "brightness": args.brightness}
+            if args.source:
+                params.update(url=args.source, username=args.username, width=args.width,
+                              height=args.height, fps=args.fps, verify_tls=not args.insecure)
+                if "G3_CAMERA_PASSWORD" in os.environ:
+                    params["password"] = os.environ["G3_CAMERA_PASSWORD"]
+            result = operation(device, "screen.push.send", params)
         except Exception:
             if image_id:
                 try:

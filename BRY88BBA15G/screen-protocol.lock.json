@@ -4,7 +4,7 @@
   "schema": 1,
   "files": {
     "protocol/screen_caps.c": "58271b158d042f6cdcfb41abb125978dc8eb3cb1723d0a4fcfd7fe83bea935fe",
-    "protocol/screen_caps.h": "12af3fc73a3f43ffe0c6e60908e5509aab2294947b659aba1831332d48386037",
+    "protocol/screen_caps.h": "2cb451666cac6afb0c8250129be8100f2a5d6e1d1837799bf7dc55b7b5293a9f",
     "protocol/screen_link.c": "2e6e9bcbec01d5df167ab533a3cbf599e7cc95c3030d403b6bbf659ec3fe0504",
     "protocol/screen_link.h": "790c53da4b7788fa83ea96a62a8493374623ae89632fcf70b91c0294de175a4d",
     "protocol/widgets.c": "6ab69c7d7f7a672098aca3510a51e86f1476abb47e0a1d8d9389d833b68c1ab1",
@@ -25,7 +25,7 @@
     "protocol/display_diag.h": "3528e75108e691b6d243c2087fc7e9c4dea80b835d01883675dad7491f167bef",
     "protocol/page_control.h": "dcf0c15f7a9addc63513d1b57714f215deb51101529a8659ed28fee2126d92dc",
     "protocol/media_wire.c": "319ee640c4326f832cbd0ba78783085c26e724b95e9b1d55a9cfb321ddfa76a0",
-    "protocol/media_wire.h": "c2648a4f90074cd16cbd0f442abec13875908e96d55c403771105dd90d62a77c"
+    "protocol/media_wire.h": "40b62ee2ecd36f473326dd8b64d11ee1edd64a418204ac0533948d8801b89d61"
   },
   "source_paths": {
     "protocol/screen_link.c": "protocol/screen_link.c",
@@ -52,5 +52,5 @@
     "protocol/media_wire.c": "protocol/media_wire.c",
     "protocol/media_wire.h": "protocol/media_wire.h"
   },
-  "commit": "a6aa971c031aecace4219b551698bae6e143c78e"
+  "commit": "41edad34c8dafe7262942a181fa0aeaeda61fd14"
 }
