@@ -41,8 +41,8 @@ class MotionPush:
                 params.update(id=ident, mode="timed", duration_ms=15000, ttl_ms=15000,
                               overflow="drop_oldest", wake=True)
                 result = operation(self.device, "screen.push.send", params)
-                # Only send can merge into another canonical URL ID. An update
-                # leaves last_push_id pointing at the most recent other send.
+                # Only send can merge into another canonical URL ID. Keep the
+                # requested ID for an update instead of reading shared status.
                 ident = result.get("last_push_id", ident)
             self.ids[camera] = ident
             status = next((q["state"] for q in result.get("queue", []) if q["id"] == ident),
