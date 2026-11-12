@@ -4,6 +4,7 @@
 #include <cstring>
 #include "protocol/guard.h"
 static uint32_t ms;
+static uint32_t millis(){return ms;}
 static bool screenStartupAuto=true,save_ok=true;
 static unsigned saved,sent;
 static struct {
@@ -49,4 +50,9 @@ int main() {
   for(const char *bad:{"true","false","1"}){params["auto_resume"]=bad;assert(!strcmp(screenStartupSet(params,out.to<JsonObject>()),"invalid_params"));}
   params["auto_resume"]=1;assert(!strcmp(screenStartupSet(params,out.to<JsonObject>()),"invalid_params"));
   assert(screenStartupAuto);
+  // An RX callback may record its announcement after the caller captured now.
+  // It must retain the five-second negotiation window, including tick wrap.
+  screenGuard.session++;screenGuard.seen=50000;screenGuard.remaining=30000;
+  screenGuard.state="ready";ms=50000;screenStartupPoll(49999,false);assert(sent==4);
+  poll(54999);assert(sent==4);poll(55000);assert(sent==5);
 }

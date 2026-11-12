@@ -585,6 +585,8 @@ static void screenPoll(uint32_t now) {
     unsigned c = screenUart.read();
     if (!screenMediaFeed(c,now)) stockFrame.feed(c, screenCommand);
   }
+  // RX callbacks timestamp fresh announcements; use a tick after those writes.
+  now = millis();
   if (!screenOtaActive() && screenHead != screenTail &&
       due(now, screenQueue[screenHead].at)) {
     const String &wire = screenQueue[screenHead].wire;
