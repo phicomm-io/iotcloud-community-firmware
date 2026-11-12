@@ -114,7 +114,7 @@ static void screenMediaSnapshot(const uint8_t *p, size_t n) {
 }
 static void screenMediaPacket(void *, unsigned channel, uint32_t session,
                               uint32_t sequence, const uint8_t *p, size_t n) {
-  if (session != screenMedia.session || !n)
+  if (screenOtaActive() || session != screenMedia.session || !n)
     return;
   screenMedia.frames++;
   if (channel == MEDIA_LINK) {
@@ -167,8 +167,9 @@ static void screenMediaPacket(void *, unsigned channel, uint32_t session,
     screenRelayPacket(channel, sequence, p, n);
 }
 static bool screenMediaFeed(unsigned c, uint32_t now) {
-  if (screenOtaActive())
-    return false;
+  // A heartbeat already in flight can arrive after OTA takes ownership.
+  // Consume its framing, then discard it in screenMediaPacket; forwarding
+  // those bytes to the stock parser can manufacture an OTA error reply.
   media_parser &parser = screenMedia.parser;
   uint32_t errors = parser.framing_errors;
   bool timeout = parser.active && uint32_t(now - parser.at) > 1000;
