@@ -21,10 +21,10 @@ static void screenRuleJson(JsonObject o, const reminder_rule &r) {
   o["text"] = r.text;
   o["last_fire"] = r.last_fire;
 }
-static const char *screenServicesCommand(const String &action,
-                                         JsonObjectConst params,
-                                         JsonObject data) {
-  if(action.startsWith("screen.link.")||action.startsWith("screen.media.")||action.startsWith("screen.push.")||action.startsWith("screen.stream."))return screenMediaCommand(action,params,data);
+// Keep legacy command locals off the media call path. UDP dispatch already
+// holds its receive/response buffers on the Arduino loop task's stack.
+static __attribute__((noinline)) const char *screenLegacyServicesCommand(
+    const String &action, JsonObjectConst params, JsonObject data) {
   if(action.startsWith("screen.calibration."))return screenCalibrationCommand(action,params,data);
   if(action=="screen.page.get"||action=="screen.page.set")return screenPageCommand(action,params,data);
   if(action.startsWith("screen.diagnostics."))return screenDiagCommand(action,params,data);
@@ -569,4 +569,13 @@ static const char *screenServicesCommand(const String &action,
   if (action == "screen.update.start")
     return screenUpdateStart(params);
   return "unsupported_action";
+}
+
+static const char *screenServicesCommand(const String &action,
+                                        JsonObjectConst params,
+                                        JsonObject data) {
+  if (action.startsWith("screen.link.") || action.startsWith("screen.media.") ||
+      action.startsWith("screen.push.") || action.startsWith("screen.stream."))
+    return screenMediaCommand(action, params, data);
+  return screenLegacyServicesCommand(action, params, data);
 }
