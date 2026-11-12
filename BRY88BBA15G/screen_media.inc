@@ -1,4 +1,5 @@
 /* Transient media owner; all UART access remains in the application loop. */
+#include "screen_uart_handoff.h"
 extern "C" {
 #include "protocol/media_wire.h"
 }
@@ -27,6 +28,15 @@ static struct {
   unsigned result = MEDIA_OFFLINE, lastOp = 0;
   const char *state = "unavailable", *requestState = "idle";
 } screenMedia;
+static bool screenMediaQuiesce() {
+  screenRelayStop();
+  if (uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(200)) != ESP_OK) return false;
+  bool quiet = bry::uartDiscardUntilQuiet(screenUart, [] { return millis(); },
+                                        [](unsigned ms) { delay(ms); });
+  stockFrame.reset();
+  screenMedia.parser.active = false;
+  return quiet;
+}
 static bool screenMediaWrite(unsigned channel, uint32_t seq, const void *p,
                              size_t n) {
   uint8_t wire[2 * (MEDIA_PACKET_MAX + 18) + 2];
@@ -712,7 +722,12 @@ static void screenMediaPoll(uint32_t now) {
    * Refresh here so unsigned age arithmetic cannot treat that as a timeout. */
   now = millis();
   screenRelayPoll(now);
-  if (!screenMedia.session || screenOtaActive())
+  if (screenOtaActive()) {
+    // Heartbeats are intentionally suspended while the raw owner is active.
+    screenMedia.seen = screenMedia.ping = now;
+    return;
+  }
+  if (!screenMedia.session)
     return;
   /* A confirmed restart returns the MCU UART to its boot rate. Follow the
    * acknowledgement before boot starts, so automatic resume cannot consume
