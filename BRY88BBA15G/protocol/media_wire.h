@@ -17,6 +17,7 @@
 #define MEDIA_STATUS_HISTORY (MEDIA_STATUS_QUEUE + MEDIA_QUEUE * 9u)
 #define MEDIA_STATUS_BYTES (MEDIA_STATUS_HISTORY + MEDIA_HISTORY * 5u)
 #define MEDIA_STREAM_STATUS_BYTES 40u
+#define MEDIA_DECODER_DETAIL_BYTES 64u
 #define MEDIA_TAP_WINDOW_MS 350u
 /* Zero-delimited, escaped binary records are consumed before either text
  * parser. Header: GM, version, channel, boot session LE32, sequence LE32,

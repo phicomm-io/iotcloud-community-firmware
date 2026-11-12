@@ -17,7 +17,7 @@ static struct {
   esp_pm_lock_handle_t apb = nullptr, sleep = nullptr;
   bool locked = false;
   uint8_t command[MEDIA_PACKET_MAX] = {},
-          snapshot[MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES] = {},
+          snapshot[MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES + MEDIA_DECODER_DETAIL_BYTES] = {},
           streamConfig[519] = {};
   size_t commandSize = 0;
   uint32_t configuredSession = 0, lastId = 0;
@@ -96,7 +96,9 @@ static void screenMediaSnapshot(const uint8_t *p, size_t n) {
       }
     }
     screenMedia.snapshot[23] = slot;
-  } else if (n == sizeof(screenMedia.snapshot)) {
+  } else if (n == MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES ||
+             n == sizeof(screenMedia.snapshot)) {
+    memset(screenMedia.snapshot, 0, sizeof(screenMedia.snapshot));
     memcpy(screenMedia.snapshot, p, n);
   } else {
     return;
@@ -331,6 +333,9 @@ static void screenMediaGet(JsonObject out, bool all = true) {
   out["decoder_status"] = screenMedia.snapshot[24];
   out["decoder_flags"] = screenMedia.snapshot[25];
   out["decoder_ms"] = screenMedia.snapshot[26] | screenMedia.snapshot[27] << 8;
+  JsonArray decoder = out.createNestedArray("decoder_registers");
+  for (unsigned i = 0; i < MEDIA_DECODER_DETAIL_BYTES / 4; i++)
+    decoder.add(media_u32(screenMedia.snapshot + MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES + i * 4));
   JsonObject request = out.createNestedObject("request");
   request["sequence"] = screenMedia.request;
   request["id"] = screenMedia.lastId;
