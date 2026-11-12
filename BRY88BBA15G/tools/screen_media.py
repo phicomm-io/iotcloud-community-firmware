@@ -75,6 +75,8 @@ def main():
             p.add_argument("--text", default="")
             p.add_argument("--mode", choices=("timed", "confirm"), default="timed")
             p.add_argument("--seconds", type=int, default=10)
+            p.add_argument("--ttl", type=int, help="Expire this many seconds after receipt, even while hidden; 0 disables")
+            p.add_argument("--overflow", choices=("reject", "drop_newest", "drop_oldest"))
             p.add_argument("--no-wake", action="store_true")
             p.add_argument("--brightness", type=int, default=30)
     p = sub.add_parser("update", help="Patch a queued notification without moving its position")
@@ -87,6 +89,7 @@ def main():
         p.add_argument("--" + key)
     for key in ("width", "height", "fps", "brightness", "seconds"):
         p.add_argument("--" + key, type=int)
+    p.add_argument("--ttl", type=int, help="Reset expiry in seconds; 0 disables")
     p.add_argument("--mode", choices=("timed", "confirm"))
     p.add_argument("--wake", action=argparse.BooleanOptionalAction, default=None)
     p.add_argument("--verify-tls", action=argparse.BooleanOptionalAction, default=None)
@@ -146,6 +149,9 @@ def main():
             value = getattr(args, key)
             if value is not None:
                 params[key] = value
+        if args.ttl is not None:
+            if not 0 <= args.ttl <= 86400: parser.error("TTL must be 0..86400 seconds")
+            params["ttl_ms"] = args.ttl * 1000
         if args.seconds is not None:
             params["duration_ms"] = args.seconds * 1000
         if args.source is not None:
@@ -205,6 +211,10 @@ def main():
                                "title": args.title, "text": args.text, "mode": args.mode,
                                "duration_ms": args.seconds * 1000, "wake": not args.no_wake,
                                "brightness": args.brightness}
+            if args.ttl is not None:
+                if not 0 <= args.ttl <= 86400: parser.error("TTL must be 0..86400 seconds")
+                params["ttl_ms"] = args.ttl * 1000
+            if args.overflow is not None: params["overflow"] = args.overflow
             if args.source:
                 params.update(url=args.source, username=args.username, width=args.width,
                               height=args.height, fps=args.fps, verify_tls=not args.insecure)

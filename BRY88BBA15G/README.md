@@ -65,3 +65,11 @@ URLs can be replaced. Missing or completed IDs return not_found and never replay
 WebUI and CLI support updating and dismissing a chosen ID. Updates require the
 ESP and MCU versions advertising `update_supported`; `send` retains its creation
 retry semantics. See the bilingual media API for field and receipt details.
+
+### Motion-triggered previews / 运动检测推送
+
+[中文接入例程](docs/motion-notifications.zh.md) / [English examples](docs/motion-notifications.en.md): Frigate MQTT + Home Assistant, Scrypted MotionSensor scripts/MQTT, on-demand go2rtc MJPEG conversion, and a container webhook bridge that renews one notification ID and expires after motion stops.
+
+通知可设置 `ttl_ms`（接收后过期，0 关闭、上限一天）和 `overflow`：默认 `reject`，或 `drop_newest` / `drop_oldest`（保护当前项、淘汰最早等待项）。`screen.push.update` 可重设 TTL；`screen.push.get` 的队列返回 `expires_in_ms`，历史区分 `expired`、`dropped`、`evicted`。网页和 CLI 也可配置这些选项。
+
+Notifications support `ttl_ms` (expiry after receipt, 0 disables, maximum one day) and per-message `overflow`: `reject` by default, `drop_newest`, or `drop_oldest` (protecting the current notice). Partial updates reset TTL. Queue status exposes `expires_in_ms`; history distinguishes `expired`, `dropped`, and `evicted`. The WebUI and CLI expose these options.

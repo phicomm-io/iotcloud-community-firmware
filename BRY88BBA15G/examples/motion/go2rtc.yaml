@@ -1,0 +1,9 @@
+streams:
+  door:
+    # Frigate restream, Scrypted Rebroadcast RTSP URL, or camera substream.
+    - rtsp://REPLACE_WITH_YOUR_RTSP_SOURCE
+  door_g3:
+    - "ffmpeg:door#video=mjpeg#width=320#height=240"
+ffmpeg:
+  # Baseline JPEG 4:2:0 at one frame per second; conversion starts on demand.
+  mjpeg: "-c:v mjpeg -pix_fmt yuvj420p -q:v 7 -r 1 -threads 1"
