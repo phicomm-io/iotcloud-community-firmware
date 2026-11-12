@@ -20,6 +20,7 @@ static void screenServicesInit();
 static void screenServicesPoll(uint32_t);
 static bool screenOtaCommand(const String &, const String &);
 static bool screenOtaActive();
+static void screenOtaReplyError(const String &, unsigned);
 static bool screenBusinessSend(const char *, size_t);
 static bool screenGuardLine(const uint8_t *, size_t);
 static bool screenGuardAnnounce(const String &);
@@ -84,6 +85,7 @@ static bool screenSend(const String &line, uint32_t delayMs = 0) {
   return true;
 }
 static void screenReply(const String &cmd, bool ok = true, unsigned error = 1) {
+  if (!ok && screenOtaActive()) screenOtaReplyError(cmd, error);
   char suffix[32];
   if (ok)
     snprintf(suffix, sizeof(suffix), ":OK\r\n");

@@ -291,6 +291,14 @@ static void pump(screen_maintenance &m) {
   }
 }
 int main(int argc, char **argv) {
+  screenOtaReplyError("pub", 0x43);
+  assert(!strcmp(screenOtaErrorText(), "reply_pub_0043"));
+  screenOtaReplyError("other", 1);
+  assert(!strcmp(screenOtaErrorText(), "reply_pub_0043"));
+  screenOtaError = "";
+  screenOtaReplyError("unsafe argument", 0x70);
+  assert(!strcmp(screenOtaErrorText(), "reply_unknown_0070"));
+  screenOtaError = "";
   testLinkReset();
   assert(!strlen(screenOtaErrorText()));
   screenImage.active=true;

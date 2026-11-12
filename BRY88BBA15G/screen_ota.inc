@@ -5,6 +5,16 @@ static volatile bool screenUploadBusy = false, screenArtifactPending = false;
 static uint8_t screenArtifactHeader[BRY_IMAGE_HEADER_BYTES];
 static portMUX_TYPE screenImageMux = portMUX_INITIALIZER_UNLOCKED;
 static bool screenOtaActive() { return screenImage.active; }
+static void screenOtaReplyError(const String &cmd, unsigned error) {
+  if (screenOtaError.length()) return;
+  // Report only a bounded command name, never peer arguments or payload bytes.
+  bool valid = cmd.length() && cmd.length() <= 32;
+  for (size_t i = 0; i < cmd.length(); ++i)
+    valid = valid && ((cmd.c_str()[i] >= 'a' && cmd.c_str()[i] <= 'z') || cmd.c_str()[i] == '_');
+  char code[16];
+  snprintf(code, sizeof(code), "_%04X", error);
+  screenOtaError = String("reply_") + (valid ? cmd : String("unknown")) + code;
+}
 /* Binary OTA owns this UART until its transfer ends. In particular, a weather
  * replay between download_bin metadata and the raw packet corrupts the MCU's
  * length-driven receiver. Business writers must retry after OTA. */
@@ -96,7 +106,6 @@ static bool screenOtaCommand(const String &cmd, const String &arg) {
       screenImage.offset = 0;
       screenImage.pending = false;
       screenImage.state = "waiting_for_start";
-      screenOtaError = "";
       /* Thirteen bounded 32-KiB erases can take up to 65 s on GPIO NOR. */
       screenImage.deadline = millis() + 90000;
       Serial.println("screen OTA metadata requested");
