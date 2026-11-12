@@ -30,6 +30,7 @@ if(SCREEN_MCU_SOURCE)
 endif()
 
 add_executable(test_stock_frame test_stock_frame.cpp)
+target_link_libraries(test_stock_frame PRIVATE bry_bridge)
 target_compile_features(test_stock_frame PRIVATE cxx_std_11)
 target_compile_options(test_stock_frame PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 add_test(NAME stock_frame COMMAND test_stock_frame)

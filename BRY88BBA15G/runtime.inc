@@ -583,7 +583,9 @@ static void screenPoll(uint32_t now) {
   size_t budget = 4096;
   while (budget-- && screenUart.available()) {
     unsigned c = screenUart.read();
-    if (!screenMediaFeed(c,now)) stockFrame.feed(c, screenCommand);
+    // Length-delimited stock publications own all payload bytes, including NUL.
+    if (stockFrame.binary || !screenMediaFeed(c,now))
+      stockFrame.feed(c, screenCommand);
   }
   // RX callbacks timestamp fresh announcements; use a tick after those writes.
   now = millis();
