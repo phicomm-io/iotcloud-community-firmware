@@ -92,6 +92,7 @@ class DirectInstallTest(unittest.TestCase):
         self.bad_readback = False
         self.exports = 0
         self.boot_modes = ['normal']
+        self.boot_updates = []
         owner = self
 
         class Device:
@@ -116,13 +117,15 @@ class DirectInstallTest(unittest.TestCase):
                         'ota': {'state': 'staged_verified' if owner.started else 'idle',
                                 'sent': 0x67000 if owner.started else 0}}}
                 if action == 'screen.recovery.get':
+                    if owner.installed and owner.boot_updates:
+                        recovery.update(owner.boot_updates.pop(0))
                     return recovery
                 if action == 'screen.update.start':
                     owner.started = True
                     return {'accepted': True}
                 if action == 'screen.update.install':
                     owner.installed = True
-                    return {'accepted': True}
+                    return {'request': 7, 'session': 1}
                 raise AssertionError(f'Unexpected command: {action}')
 
         def upload(request, timeout):
@@ -181,6 +184,21 @@ class DirectInstallTest(unittest.TestCase):
         self.community = True
         self.boot_modes = ['fault_recovery']
         with self.assertRaisesRegex(RuntimeError, 'failed to start normally'):
+            self.run_tool()
+
+    def test_new_boot_resume_timeout_does_not_reject_verified_install(self):
+        self.community = True
+        self.boot_modes = ['window', 'normal']
+        self.boot_updates = [{'request': 1, 'state': 'timeout'}]
+        with patch.object(flash_screen.time, 'sleep'):
+            self.run_tool()
+        records = [json.loads(line) for line in (self.directory / 'install.jsonl').read_text().splitlines()]
+        self.assertEqual(records[-1]['event'], 'verified_running')
+
+    def test_install_request_failure_is_still_rejected(self):
+        self.community = True
+        self.boot_updates = [{'session': 1, 'request': 7, 'state': 'mcu_rejected'}]
+        with self.assertRaisesRegex(RuntimeError, 'installation rejected'):
             self.run_tool()
 
     def test_stage_only_on_stock_rejected_before_upload(self):

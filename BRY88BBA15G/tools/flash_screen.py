@@ -145,7 +145,8 @@ def main():
             record("staged", {"sha256": sha})
             return
         previous_session = recovery.get("session")
-        record("install", device.command("screen.update.install", {"sha256": sha}))
+        install_request = device.command("screen.update.install", {"sha256": sha})
+        record("install", install_request)
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             try:
@@ -160,7 +161,11 @@ def main():
                 if recovery.get("mode") == "normal":
                     record("verified_running", recovery)
                     return
-            if recovery.get("state") in ("mcu_rejected", "invalid_response", "timeout"):
+            # A new boot may have its own startup/resume request in flight.
+            # Only a failure of this installation request belongs to this tool.
+            if (recovery.get("session") == previous_session and
+                    recovery.get("request") == install_request.get("request") and
+                    recovery.get("state") in ("mcu_rejected", "invalid_response", "timeout")):
                 raise RuntimeError(f"MCU installation rejected: {recovery}")
             time.sleep(.4)
         raise TimeoutError("New MCU image did not announce its matching internal-flash digest")
