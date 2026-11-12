@@ -51,7 +51,10 @@ static bool screenMediaBaud(uint32_t rate) {
   serial.stop_bits = UART_STOP_BITS_1;
   serial.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   serial.source_clk = high ? UART_SCLK_APB : UART_SCLK_REF_TICK;
-  bool ok = uart_param_config(UART_NUM_1, &serial) == ESP_OK;
+  // Leave FIFO headroom for Wi-Fi interrupt latency at the negotiated rates.
+  // The default near-full threshold leaves less than 200 us at 921600.
+  bool ok = uart_param_config(UART_NUM_1, &serial) == ESP_OK &&
+            uart_set_rx_full_threshold(UART_NUM_1, high ? 32 : 112) == ESP_OK;
   if (!high && screenMedia.locked) {
     ESP_ERROR_CHECK(esp_pm_lock_release(screenMedia.sleep));
     ESP_ERROR_CHECK(esp_pm_lock_release(screenMedia.apb));
@@ -321,8 +324,12 @@ static const char *screenLinkSet(JsonObjectConst params, JsonObject out) {
   if (params.containsKey("apply_now") && !params["apply_now"].is<bool>())
     return "invalid_params";
   if ((params["apply_now"] | false) &&
-      !(screenBridge.capabilities & SCREEN_CAP_BINARY_LINK))
+      (!(screenBridge.capabilities & SCREEN_CAP_BINARY_LINK) ||
+       !screenGuardAvailable()))
     return "not_ready";
+  if ((params["apply_now"] | false) &&
+      (screenImage.active || !strcmp(screenGuard.state, "pending")))
+    return "busy";
   Preferences saved;
   if (!saved.begin("g3media", false))
     return "storage_error";
