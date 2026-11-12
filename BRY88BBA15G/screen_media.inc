@@ -20,7 +20,7 @@ static struct {
           snapshot[MEDIA_STATUS_BYTES + MEDIA_STREAM_STATUS_BYTES + MEDIA_DECODER_DETAIL_BYTES] = {},
           streamConfig[519] = {};
   size_t commandSize = 0;
-  uint32_t configuredSession = 0, lastId = 0;
+  uint32_t configuredSession = 0, lastId = 0, restartRequest = 0;
   unsigned result = MEDIA_OFFLINE, lastOp = 0;
   const char *state = "unavailable", *requestState = "idle";
 } screenMedia;
@@ -179,6 +179,7 @@ static bool screenMediaAnnounce(const String &arg) {
     screenMedia.ready = false;
     screenMedia.attempted = false;
     screenMedia.configuredSession = 0;
+    screenMedia.restartRequest = 0;
     screenMedia.sequence = screenMedia.request = 0;
     screenMedia.autoIndex = 0;
     memset(screenMedia.snapshot, 0, sizeof(screenMedia.snapshot));
@@ -678,6 +679,25 @@ static void screenMediaPoll(uint32_t now) {
   screenRelayPoll(now);
   if (!screenMedia.session || screenOtaActive())
     return;
+  /* A confirmed restart returns the MCU UART to its boot rate. Follow the
+   * acknowledgement before boot starts, so automatic resume cannot consume
+   * the recovery window while we wait for the high-rate heartbeat timeout. */
+  if (screenGuard.session == screenMedia.session &&
+      screenGuard.operation == GUARD_RESTART &&
+      !strcmp(screenGuard.state, "complete") &&
+      screenGuard.request != screenMedia.restartRequest) {
+    screenMedia.restartRequest = screenGuard.request;
+    screenRelayStop();
+    screenMediaBaud(115200);
+    screenMedia.phase = 0;
+    screenMedia.ready = false;
+    screenMedia.mode = 0;
+    screenMedia.attempted = true;
+    screenMedia.deadline = 0;
+    screenMedia.seen = now;
+    screenMedia.state = "synchronizing";
+    return;
+  }
   if ((screenMedia.phase && (int32_t)(now - screenMedia.deadline) >= 0) ||
       (screenMedia.rate != 115200 &&
        uint32_t(now - screenMedia.seen) > 10000)) {
