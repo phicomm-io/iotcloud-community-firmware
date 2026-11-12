@@ -587,7 +587,7 @@ static const char *screenPushUpdatePack(JsonObjectConst params, uint8_t *p, size
   for (unsigned i = 0; i < sizeof(fields) / sizeof(*fields); i++)
     if (params.containsKey(fields[i])) mask |= 1u << i;
   if ((mask & MEDIA_UPDATE_IMAGE) && (mask & MEDIA_UPDATE_URL)) return "invalid_params";
-  for (const char *key : {"id", "image_id", "duration_ms", "brightness", "width", "height", "fps", "ttl_ms"})
+  for (const char *key : {"image_id", "duration_ms", "brightness", "width", "height", "fps", "ttl_ms"})
     if (params.containsKey(key) && !params[key].is<uint32_t>()) return "invalid_params";
   for (const char *key : {"wake", "verify_tls"})
     if (params.containsKey(key) && !params[key].is<bool>()) return "invalid_params";

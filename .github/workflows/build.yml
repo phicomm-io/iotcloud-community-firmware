@@ -422,7 +422,7 @@ jobs:
         if: matrix.variant == 'g3'
         with:
           repository: phicomm-io/iotcloud-bry88bba15g-screenmcu
-          ref: 98d6749cce55f5aa4fc356b2d55853f9fa415c21
+          ref: 07b78366564ba7f73db765c264e002bd2451c1ea
           path: build/screen-source
       - uses: actions/checkout@v4
         if: matrix.variant == 'g3'
