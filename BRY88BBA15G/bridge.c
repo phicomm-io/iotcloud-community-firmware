@@ -8,16 +8,15 @@ static void line(void *context, const char *p, size_t n) {
     char response[80];
     if (!screen_caps_parse_offer(p, n, &session, &caps) || !b->send)
       return;
-    if ((caps & (SCREEN_CAP_KNOWN & ~(SCREEN_CAP_FLASH_INFO | SCREEN_CAP_MEDIA | SCREEN_CAP_IMAGE | SCREEN_CAP_BINARY_LINK | SCREEN_CAP_URL_PUSH | SCREEN_CAP_PUSH_UPDATE | SCREEN_CAP_PUSH_POLICY))) != (SCREEN_CAP_KNOWN & ~(SCREEN_CAP_FLASH_INFO | SCREEN_CAP_MEDIA | SCREEN_CAP_IMAGE | SCREEN_CAP_BINARY_LINK | SCREEN_CAP_URL_PUSH | SCREEN_CAP_PUSH_UPDATE | SCREEN_CAP_PUSH_POLICY)))
+    const uint32_t supported = SCREEN_CAP_KNOWN & ~SCREEN_CAP_FLASH_INFO;
+    const uint32_t required = supported &
+        ~(SCREEN_CAP_MEDIA | SCREEN_CAP_IMAGE | SCREEN_CAP_BINARY_LINK |
+          SCREEN_CAP_URL_PUSH | SCREEN_CAP_PUSH_UPDATE | SCREEN_CAP_PUSH_POLICY);
+    if ((caps & required) != required)
       return; /* rc6 supports the current community MCU or factory UART only. */
     /* Repeat ACKs preserve the capabilities agreed for this session. */
     if (b->extended && session == b->session) caps = b->capabilities;
-    caps &= SCREEN_CAP_WIDGETS | SCREEN_CAP_SCENE | SCREEN_CAP_SERVICES |
-            SCREEN_CAP_BACKLIGHT | SCREEN_CAP_DISPLAY | SCREEN_CAP_SCENE_V3 |
-            SCREEN_CAP_VALUE_MODE | SCREEN_CAP_RESPONSIVE |
-            SCREEN_CAP_MODULE_CONTROL | SCREEN_CAP_APPEARANCE |
-            SCREEN_CAP_WALLPAPER | SCREEN_CAP_MULTI_UNITS | SCREEN_CAP_HIDE_TITLE |
-            SCREEN_CAP_FONT_BANK | SCREEN_CAP_LANGUAGE | SCREEN_CAP_CHART_POINTS | SCREEN_CAP_PAGE_RAIL | SCREEN_CAP_RESOURCE_IO | SCREEN_CAP_DISPLAY_DIAG | SCREEN_CAP_PAGE_CONTROL | SCREEN_CAP_COMPACT_WIDGETS | SCREEN_CAP_MEDIA | SCREEN_CAP_IMAGE | SCREEN_CAP_BINARY_LINK | SCREEN_CAP_URL_PUSH | SCREEN_CAP_PUSH_UPDATE | SCREEN_CAP_PUSH_POLICY;
+    caps &= supported;
     size_t used = screen_caps_ack(response, sizeof(response), session, caps);
     if (used && b->send(b->context, response, used)) {
       if (!b->extended || session != b->session) {
