@@ -12,7 +12,7 @@ static struct {
   uint32_t target = 0, phaseAt = 0, deadline = 0, sequence = 0, request = 0,
            sent = 0;
   uint32_t fallback = 0, retries = 0, frames = 0;
-  unsigned mode = 0, phase = 0, attempts = 0, autoIndex = 0;
+  unsigned mode = 0, phase = 0, failedPhase = 0, attempts = 0, autoIndex = 0;
   bool automatic = false, ready = false, attempted = false, pending = false;
   esp_pm_lock_handle_t apb = nullptr, sleep = nullptr;
   bool locked = false;
@@ -61,6 +61,7 @@ static bool screenMediaBaud(uint32_t rate) {
 }
 static void screenMediaFallback() {
   bool retry = screenMedia.phase && screenMedia.automatic && screenMedia.mode;
+  screenMedia.failedPhase = screenMedia.phase;
   screenRelayStop();
   screenMediaBaud(115200);
   screenMedia.phase = 0;
@@ -265,6 +266,12 @@ static void screenLinkGet(JsonObject out) {
   out["rate"] = screenMedia.desired;
   out["max_rate"] = screenMedia.maximum;
   out["actual_rate"] = screenMedia.rate;
+  uint32_t hardware = 0;
+  uart_get_baudrate(UART_NUM_1, &hardware);
+  out["hardware_rate"] = hardware;
+  out["apb_hz"] = getApbFrequency();
+  out["negotiation_phase"] = screenMedia.phase;
+  out["last_failed_phase"] = screenMedia.failedPhase;
   out["state"] = screenMedia.state;
   out["session"] = screenMedia.session;
   out["crc_errors"] = screenMedia.parser.crc_errors;
