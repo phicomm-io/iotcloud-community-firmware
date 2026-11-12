@@ -52,5 +52,5 @@
     "protocol/media_wire.c": "protocol/media_wire.c",
     "protocol/media_wire.h": "protocol/media_wire.h"
   },
-  "commit": "e7b887e1b6b8b1552bd754b8636f062d62f67fc1"
+  "commit": "a6aa971c031aecace4219b551698bae6e143c78e"
 }
