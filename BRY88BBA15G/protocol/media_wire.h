@@ -53,8 +53,27 @@ enum {
   MEDIA_STREAM_START,
   MEDIA_STREAM_STOP,
   MEDIA_SELECT,
-  MEDIA_PUSH_URL
+  MEDIA_PUSH_URL,
+  MEDIA_PUSH_UPDATE
 };
+/* Presence mask for MEDIA_PUSH_UPDATE. Source bytes follow the mask only
+ * when at least one MEDIA_UPDATE_SOURCE bit is set. */
+#define MEDIA_UPDATE_TITLE (1u << 0)
+#define MEDIA_UPDATE_TEXT (1u << 1)
+#define MEDIA_UPDATE_IMAGE (1u << 2)
+#define MEDIA_UPDATE_MODE (1u << 3)
+#define MEDIA_UPDATE_DURATION (1u << 4)
+#define MEDIA_UPDATE_WAKE (1u << 5)
+#define MEDIA_UPDATE_BRIGHTNESS (1u << 6)
+#define MEDIA_UPDATE_URL (1u << 7)
+#define MEDIA_UPDATE_USERNAME (1u << 8)
+#define MEDIA_UPDATE_PASSWORD (1u << 9)
+#define MEDIA_UPDATE_WIDTH (1u << 10)
+#define MEDIA_UPDATE_HEIGHT (1u << 11)
+#define MEDIA_UPDATE_FPS (1u << 12)
+#define MEDIA_UPDATE_TLS (1u << 13)
+#define MEDIA_UPDATE_ALL ((1u << 14) - 1u)
+#define MEDIA_UPDATE_SOURCE (MEDIA_UPDATE_ALL & ~127u)
 enum {
   MEDIA_OK = 0,
   MEDIA_RANGE,

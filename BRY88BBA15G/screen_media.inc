@@ -390,6 +390,7 @@ static void screenMediaGet(JsonObject out, bool all = true) {
   out["decode_errors"] = media_u32(screenMedia.snapshot + 12);
   out["pixel_crc32"] = media_u32(screenMedia.snapshot + 16);
   out["url_supported"] = (screenBridge.capabilities & SCREEN_CAP_URL_PUSH) != 0;
+  out["update_supported"] = (screenBridge.capabilities & SCREEN_CAP_PUSH_UPDATE) != 0;
   out["last_push_id"] = media_u32(screenMedia.snapshot + 32);
   out["source_error"] = media_u32(screenMedia.snapshot + 36);
   out["active_remaining_ms"] = media_u32(screenMedia.snapshot + 40);
@@ -437,7 +438,7 @@ static void screenMediaGet(JsonObject out, bool all = true) {
     JsonObject msg = queue.createNestedObject();
     msg["id"] = media_u32(p);
     msg["image_id"] = media_u32(p + 4);
-    msg["source"] = p[9] ? "url" : "upload";
+    msg["source"] = p[9] ? "url" : (media_u32(p + 4) ? "upload" : "text");
     msg["state"] = screenPushState(p[8]);
     msg["view_index"] = i < screenMedia.snapshot[30] ? i + 1 : 0;
   }
@@ -565,6 +566,62 @@ static const char *screenStreamPack(JsonObjectConst params, uint8_t *p,
   }
   return "ok";
 }
+static const char *screenPushUpdatePack(JsonObjectConst params, uint8_t *p, size_t &n) {
+  static const char *const fields[] = {"title", "text", "image_id", "mode", "duration_ms",
+      "wake", "brightness", "url", "username", "password", "width", "height", "fps", "verify_tls"};
+  if (params.size() < 2 || !params["id"].is<uint32_t>() || !params["id"].as<uint32_t>() ||
+      !screenFields(params, "|id||title||text||image_id||mode||duration_ms||wake||brightness||url||username||password||width||height||fps||verify_tls|"))
+    return "invalid_params";
+  unsigned mask = 0;
+  for (unsigned i = 0; i < sizeof(fields) / sizeof(*fields); i++)
+    if (params.containsKey(fields[i])) mask |= 1u << i;
+  if ((mask & MEDIA_UPDATE_IMAGE) && (mask & MEDIA_UPDATE_URL)) return "invalid_params";
+  for (const char *key : {"id", "image_id", "duration_ms", "brightness", "width", "height", "fps"})
+    if (params.containsKey(key) && !params[key].is<uint32_t>()) return "invalid_params";
+  for (const char *key : {"wake", "verify_tls"})
+    if (params.containsKey(key) && !params[key].is<bool>()) return "invalid_params";
+  const char *title = params["title"] | "", *text = params["text"] | "",
+             *mode = params["mode"] | "timed";
+  if (((mask & MEDIA_UPDATE_TITLE) && !screenMediaString(params["title"], 64)) ||
+      ((mask & MEDIA_UPDATE_TEXT) && !screenMediaString(params["text"], 512)) ||
+      ((mask & MEDIA_UPDATE_MODE) && !screenMediaString(params["mode"], 7)) ||
+      !scene_utf8(title, 65) || !scene_text_utf8(text, 513) ||
+      (strcmp(mode, "timed") && strcmp(mode, "confirm"))) return "invalid_params";
+  uint32_t duration = params["duration_ms"] | 10000u;
+  unsigned brightness = params["brightness"] | 30u;
+  if (!duration || duration > 3600000 || !brightness || brightness > 100) return "invalid_params";
+  unsigned body = 18;
+  if (mask & MEDIA_UPDATE_SOURCE) {
+    uint8_t *source = p + 18;
+    const char *url = params["url"] | "", *user = params["username"] | "",
+               *password = params["password"] | "";
+    if (((mask & MEDIA_UPDATE_URL) && (!screenMediaString(params["url"], 383) ||
+         (url[0] && !screenStreamUrl(url)))) ||
+        ((mask & MEDIA_UPDATE_URL) && !url[0] && (mask & (MEDIA_UPDATE_SOURCE & ~MEDIA_UPDATE_URL))))
+      return "invalid_params";
+    for (const char *key : {"username", "password"})
+      if (params.containsKey(key) && !screenMediaString(params[key], 63)) return "invalid_params";
+    for (const char *field : {user, password})
+      for (const char *c = field; *c; c++)
+        if ((unsigned char)*c < 32 || (unsigned char)*c == 127) return "invalid_params";
+    unsigned w = params["width"] | 320u, h = params["height"] | 240u,
+             fps = params["fps"] | 1u;
+    if (!w || w > 480 || !h || h > 854 || !fps || fps > 10) return "invalid_params";
+    source[0] = MEDIA_STREAM_CONFIG;source[1] = w;source[2] = w >> 8;
+    source[3] = h;source[4] = h >> 8;source[5] = fps;
+    source[6] = (params["verify_tls"] | true) ? 3 : 1;
+    memcpy(source + 7, url, strlen(url));memcpy(source + 391, user, strlen(user));
+    memcpy(source + 455, password, strlen(password));
+    body += MEDIA_STREAM_CONFIG_BYTES;
+  }
+  p[0] = MEDIA_PUSH_UPDATE;media_put32(p + 1, params["id"]);
+  media_put32(p + 5, params["image_id"] | 0u);media_put32(p + 9, duration);
+  p[13] = ((params["wake"] | true) ? 1 : 0) | (!strcmp(mode, "confirm") ? 2 : 0);
+  p[14] = brightness;p[15] = strlen(title);p[16] = mask;p[17] = mask >> 8;
+  memcpy(p + body, title, strlen(title));memcpy(p + body + strlen(title), text, strlen(text));
+  n = body + strlen(title) + strlen(text);
+  return "ok";
+}
 static const char *screenMediaCommand(const String &action,
                                       JsonObjectConst params, JsonObject out) {
   if (action == "screen.link.get") {
@@ -642,6 +699,10 @@ static const char *screenMediaCommand(const String &action,
     p[0] = MEDIA_SELECT;
     p[1] = params["index"].as<unsigned>();
     n = 2;
+  } else if (action == "screen.push.update") {
+    if (!(screenBridge.capabilities & SCREEN_CAP_PUSH_UPDATE)) return "unsupported";
+    const char *packed = screenPushUpdatePack(params, p, n);
+    if (strcmp(packed, "ok")) return packed;
   } else if (action == "screen.push.send") {
     if (!screenFields(params, "|id||image_id||title||text||duration_ms||mode||"
                               "wake||brightness||url||username||password||width||height||fps||verify_tls|") ||

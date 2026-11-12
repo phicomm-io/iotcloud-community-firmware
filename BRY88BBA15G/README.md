@@ -43,3 +43,25 @@ External text/image notifications support temporary wake, timed dismissal and to
 Normal MCU maintenance resumes automatically after five seconds unless disabled or held. Fault recovery stays available. Optional NOR resources load into validated SDRAM caches and degrade on failure without a reset loop. ESP32 checks signed online updates through stable/candidate channels; the LAN resource page downloads and verifies screen/font updates. Large MCU uploads require direct LAN access.
 
 Application updates preserve both bootloaders and stock partitions. The factory power-on key gate remains unchanged. Community MCU boot reads are optional and read-only; matching backups are reusable. The new tool/ESP32 can send a complete application directly to stock firmware, without stock-version or recovery-only gates. The new MCU removes the boot MD5 allowlist. UART installation still depends on the existing factory copy contract; see the [English G3 guide](../docs/public/en/daikin-g3-guide.md). Power loss during the MCU's internal Flash copy remains untested.
+
+### 更新已有通知 / Update an existing notification
+
+外部服务指定推送 `id`，等待成功回执后保存 `last_push_id`。调用
+`screen.push.update` 时只修改传入字段，例如
+`{"id":2001,"text":"门口仍有活动","duration_ms":15000}`。可替换已上传图片或
+HTTP(S) 图片/视频流；隐藏通知不抢占当前画面，剩余时长只延长。结束后的 ID
+返回 not_found，不会重新播放；新通知使用新 ID。WebUI 支持输入、选择、更新
+及关闭 ID；命令行示例：
+
+```sh
+python3 tools/screen_media.py --url http://device update 2001 --text '门口仍有活动' --seconds 15
+```
+
+Clients assign a notification `id` and retain the completed `last_push_id`.
+`screen.push.update` patches supplied fields, preserving queue order and view
+selection. For example, `{"id":2001,"text":"Activity continues","duration_ms":15000}`
+updates the body and extends visible time. Uploaded images and HTTP(S) image/stream
+URLs can be replaced. Missing or completed IDs return not_found and never replay.
+WebUI and CLI support updating and dismissing a chosen ID. Updates require the
+ESP and MCU versions advertising `update_supported`; `send` retains its creation
+retry semantics. See the bilingual media API for field and receipt details.

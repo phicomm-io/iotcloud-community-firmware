@@ -23,7 +23,7 @@ static ph_buf *lanBusinessDispatch(void *,const void *data,size_t length,const p
     allowed=phv_equal_text(&action,"status.get")||phv_equal_text(&action,"capabilities.get")||
       phv_equal_text(&action,"indicator.set")||phv_equal_text(&action,"co2.calibrate")||phv_equal_text(&action,"name.set");
 #ifdef IOTCLOUD_BRY88_SCREEN
-  if(!allowed) for(const char *name:{"screen.link.get","screen.media.begin","screen.media.chunk","screen.media.commit","screen.media.cancel","screen.media.get","screen.push.send","screen.push.get","screen.push.dismiss","screen.push.select","screen.stream.get","screen.stream.start","screen.stream.stop"})
+  if(!allowed) for(const char *name:{"screen.link.get","screen.media.begin","screen.media.chunk","screen.media.commit","screen.media.cancel","screen.media.get","screen.push.send","screen.push.update","screen.push.get","screen.push.dismiss","screen.push.select","screen.stream.get","screen.stream.start","screen.stream.stop"})
     if(phv_equal_text(&action,name)){allowed=true;break;}
 #endif
   if(!allowed){

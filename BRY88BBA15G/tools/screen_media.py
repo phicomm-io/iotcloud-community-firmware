@@ -77,6 +77,20 @@ def main():
             p.add_argument("--seconds", type=int, default=10)
             p.add_argument("--no-wake", action="store_true")
             p.add_argument("--brightness", type=int, default=30)
+    p = sub.add_parser("update", help="Patch a queued notification without moving its position")
+    p.add_argument("id", type=int)
+    media = p.add_mutually_exclusive_group()
+    media.add_argument("--image", type=Path)
+    media.add_argument("--source", help="Replace URL; empty string removes media")
+    media.add_argument("--clear-media", action="store_true")
+    for key in ("title", "text", "username"):
+        p.add_argument("--" + key)
+    for key in ("width", "height", "fps", "brightness", "seconds"):
+        p.add_argument("--" + key, type=int)
+    p.add_argument("--mode", choices=("timed", "confirm"))
+    p.add_argument("--wake", action=argparse.BooleanOptionalAction, default=None)
+    p.add_argument("--verify-tls", action=argparse.BooleanOptionalAction, default=None)
+    p.add_argument("--password-env", action="store_true", help="Patch password from G3_CAMERA_PASSWORD (empty clears it)")
     p = sub.add_parser("get")
     p.add_argument("kind", choices=("media", "push", "stream", "link"), default="media", nargs="?")
     p = sub.add_parser("dismiss")
@@ -124,6 +138,50 @@ def main():
         result = operation(device, "screen.stream.set", params)
     elif args.command in ("start", "stop"):
         result = operation(device, "screen.stream." + args.command)
+    elif args.command == "update":
+        if not 1 <= args.id <= 0xffffffff:
+            parser.error("ID must be a nonzero uint32")
+        params = {"id": args.id}
+        for key in ("title", "text", "username", "fps", "brightness", "mode", "wake", "verify_tls"):
+            value = getattr(args, key)
+            if value is not None:
+                params[key] = value
+        if args.seconds is not None:
+            params["duration_ms"] = args.seconds * 1000
+        if args.source is not None:
+            params["url"] = args.source
+        if not args.image:
+            for key in ("width", "height"):
+                if getattr(args, key) is not None:
+                    params[key] = getattr(args, key)
+        if args.password_env or (args.source and "G3_CAMERA_PASSWORD" in os.environ):
+            if "G3_CAMERA_PASSWORD" not in os.environ:
+                parser.error("Set G3_CAMERA_PASSWORD before --password-env")
+            params["password"] = os.environ["G3_CAMERA_PASSWORD"]
+        if args.clear_media:
+            params["image_id"] = 0
+        image_id = 0
+        try:
+            if args.image:
+                data = prepare(args.image, args.width or 320, args.height or 240)
+                image_id = secrets.randbelow(0xffffffff) + 1
+                operation(device, "screen.media.begin", {"id": image_id, "total": len(data),
+                          "crc32": zlib.crc32(data), "width": args.width or 320, "height": args.height or 240})
+                for offset in range(0, len(data), 512):
+                    operation(device, "screen.media.chunk", {"id": image_id, "offset": offset,
+                              "bytes": base64.b64encode(data[offset:offset+512]).decode()})
+                operation(device, "screen.media.commit", {"id": image_id})
+                params["image_id"] = image_id
+            if len(params) < 2:
+                parser.error("Supply at least one field to update")
+            result = operation(device, "screen.push.update", params)
+        except Exception:
+            if image_id:
+                try:
+                    operation(device, "screen.media.cancel", {"id": image_id})
+                except Exception:
+                    pass
+            raise
     elif args.command == "dismiss":
         result = operation(device, "screen.push.dismiss", {"id": args.id})
     else:
