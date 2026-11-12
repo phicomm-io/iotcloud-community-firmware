@@ -672,6 +672,9 @@ static const char *screenMediaCommand(const String &action,
   return code;
 }
 static void screenMediaPoll(uint32_t now) {
+  /* RX callbacks above can advance seen after screenPoll captured its tick.
+   * Refresh here so unsigned age arithmetic cannot treat that as a timeout. */
+  now = millis();
   screenRelayPoll(now);
   if (!screenMedia.session || screenOtaActive())
     return;
