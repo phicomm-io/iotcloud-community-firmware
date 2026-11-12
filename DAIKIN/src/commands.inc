@@ -309,9 +309,15 @@ static String execute(const String &body,bool binary=true){
   // contiguous RAM for the concurrent weather TLS connection.
   ph_value envelope,readAction;
   if(binary&&phv_parse(PH_WIRE_MSGPACK,body.c_str(),body.length(),&envelope)&&
-     phv_get(&envelope,"action",&readAction)&&
-     (phv_equal_text(&readAction,"screen.calibration.get")||phv_equal_text(&readAction,"screen.calibration.start")||phv_equal_text(&readAction,"screen.calibration.cancel")||phv_equal_text(&readAction,"screen.weather.get")||phv_equal_text(&readAction,"screen.module.get")||phv_equal_text(&readAction,"screen.page.get")||phv_equal_text(&readAction,"screen.page.set")||phv_equal_text(&readAction,"screen.diagnostics.get")||phv_equal_text(&readAction,"screen.diagnostics.start")||phv_equal_text(&readAction,"screen.diagnostics.read")||phv_equal_text(&readAction,"screen.diagnostics.stop")||phv_equal_text(&readAction,"diagnostics.get"))){
-    requestCapacity=1024;replyCapacity=4096;
+     phv_get(&envelope,"action",&readAction)){
+    const bool mediaStatus=phv_equal_text(&readAction,"screen.media.get")||phv_equal_text(&readAction,"screen.push.get");
+    const bool shortStatus=phv_equal_text(&readAction,"screen.link.get")||phv_equal_text(&readAction,"screen.stream.get");
+    if(mediaStatus){
+      // Both reject all params. Keep the full queue/history reply budget.
+      requestCapacity=1024;
+    } else if(shortStatus||phv_equal_text(&readAction,"screen.calibration.get")||phv_equal_text(&readAction,"screen.calibration.start")||phv_equal_text(&readAction,"screen.calibration.cancel")||phv_equal_text(&readAction,"screen.weather.get")||phv_equal_text(&readAction,"screen.module.get")||phv_equal_text(&readAction,"screen.page.get")||phv_equal_text(&readAction,"screen.page.set")||phv_equal_text(&readAction,"screen.diagnostics.get")||phv_equal_text(&readAction,"screen.diagnostics.start")||phv_equal_text(&readAction,"screen.diagnostics.read")||phv_equal_text(&readAction,"screen.diagnostics.stop")||phv_equal_text(&readAction,"diagnostics.get")){
+      requestCapacity=1024;replyCapacity=4096;
+    }
   }
 #endif
   DynamicJsonDocument request(requestCapacity),reply(replyCapacity);
