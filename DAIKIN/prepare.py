@@ -77,9 +77,14 @@ if screen:
     # Keep the shared page/layout, hide only the unsupported product controls.
     board_style = b'<style>section.card:has(#indicator),#indicatorSettings,#climateSettings,#co2Settings{display:none!important}</style>'
     page = page.replace(b'</head>', board_style + b'</head>')
+    handoff = (root/'BRY88BBA15G'/'wifi-handoff.js').read_bytes()
+    if page.count(b'</body>') != 1:
+        raise RuntimeError('Missing G3 frontend script insertion point')
+    page = page.replace(b'</body>', b'<script>' + handoff + b'</script></body>')
     data = gzip.compress(page, mtime=0)
     (out/'web.h').write_text('#pragma once\nstatic const unsigned char web_data[] = {' + ','.join(map(str,data)) + '};\n')
     frontend['product'] = 'BRY88BBA15G'
+    frontend['wifi_handoff_sha256'] = hashlib.sha256(handoff).hexdigest()
     frontend['adapted_gzip_sha256'] = hashlib.sha256(data).hexdigest()
     (out/'frontend.json').write_text(json.dumps(frontend, indent=2)+'\n')
 # Board ABI used by the already installed firmware. The display name is AX.

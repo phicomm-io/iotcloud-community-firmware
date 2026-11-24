@@ -8,6 +8,7 @@
 #ifdef IOTCLOUD_BRY88_SCREEN
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <lwip/sockets.h>
 #endif
 #include <Wire.h>
 #include <Preferences.h>
@@ -213,23 +214,78 @@ static bool resetConfiguration(){
   bool recovery=configRecovery;configRecovery=false;bool saved=saveConfigTransaction(empty,true);if(!saved)configRecovery=recovery||configRecovery;
   return saved;
 }
+#ifdef IOTCLOUD_BRY88_SCREEN
+static bool g3AccessPointConfigured = false;
+#endif
 static void startAccessPoint(){
   const IPAddress address(192,168,0,1),netmask(255,255,255,0);
+#ifdef IOTCLOUD_BRY88_SCREEN
+  // Stock MCU provisioning retransmissions must not restart DHCP or reapply
+  // the radio configuration while the setup AP is already serving clients.
+  if (g3AccessPointConfigured && (WiFi.getMode() & WIFI_AP))
+    return;
+  g3AccessPointConfigured =
+      WiFi.softAPConfig(address, address, netmask) && WiFi.softAP(apName.c_str());
+#else
   WiFi.softAPConfig(address,address,netmask);
   WiFi.softAP(apName.c_str());
+#endif
 }
+#ifdef IOTCLOUD_BRY88_SCREEN
+static constexpr unsigned g3StationAssociated = 1;
+static constexpr unsigned g3StationDisconnected = 2;
+static constexpr uint32_t g3StationBusyRetryMs = 1000;
+static std::atomic<unsigned> g3StationEvents{0};
+static std::atomic<bool> g3StationGotIp{false};
+static unsigned g3FastRetries = 0;
+static bool g3RetryPending = false;
+static uint32_t g3RetryAt = 0;
+
+static void g3WifiEvent(arduino_event_id_t event) {
+  if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED)
+    g3StationEvents.store(g3StationAssociated);
+  else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    g3StationGotIp.store(false);
+    g3StationEvents.fetch_or(g3StationDisconnected);
+  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+    g3StationGotIp.store(true);
+}
+
+static bool g3NeedsProvisioning() {
+  const char *ssid = config["wifi"]["ssid"] | "";
+  return configRecovery || !*ssid;
+}
+#endif
+
 static void startWifi(){
   WiFi.setHostname(deviceHostname.c_str());
+#ifdef IOTCLOUD_BRY88_SCREEN
+  const bool openAp = g3NeedsProvisioning();
+  WiFi.mode(openAp || (WiFi.getMode() & WIFI_AP) ? WIFI_AP_STA : WIFI_STA);
+#else
+  constexpr bool openAp = true;
   WiFi.mode(WIFI_AP_STA);
+#endif
   WiFi.setSleep(WIFI_PS_MIN_MODEM);
-  // Recovery AP remains available when the saved station is unreachable.
-  startAccessPoint();
+  if (openAp)
+    startAccessPoint();
   const char *ssid=config["wifi"]["ssid"]|"";
+#ifdef IOTCLOUD_BRY88_SCREEN
+  g3FastRetries = 0;
+  g3StationEvents.exchange(0);
+  g3RetryPending = *ssid &&
+                   WiFi.begin(ssid, config["wifi"]["password"] | "") == WL_CONNECT_FAILED;
+  g3RetryAt = millis() + g3StationBusyRetryMs;
+#else
   if(*ssid)WiFi.begin(ssid,config["wifi"]["password"]|"");
+#endif
   connectAt=millis();
 }
 #ifdef IOTCLOUD_BRY88_SCREEN
 static bool g3OnlineBusy=false;
+static bool g3WifiWorkBusy();
+#include "../../BRY88BBA15G/wifi_provisioning.inc"
+#include "../../BRY88BBA15G/wifi_portal.inc"
 #include "../../BRY88BBA15G/runtime.inc"
 #include "../../BRY88BBA15G/screen_services.inc"
 #else
@@ -247,6 +303,49 @@ static void g3OnlinePoll();
 #ifdef IOTCLOUD_BRY88_SCREEN
 #include "../../BRY88BBA15G/screen_http.inc"
 #include "../../BRY88BBA15G/online_ota.inc"
+
+static bool g3WifiWorkBusy() {
+  return otaActive || g3OnlineBusy || screenUploadBusy || screenOtaActive();
+}
+
+static void pollG3StationRetry(uint32_t now) {
+  constexpr unsigned fastRetryLimit = 4;
+  constexpr uint32_t fastRetryIntervalMs = 15000;
+  constexpr uint32_t retryIntervalMs = 30000;
+  const unsigned events = g3StationEvents.exchange(0);
+  if (events & g3StationAssociated) {
+    g3FastRetries = 0;
+    g3RetryPending = false;
+  }
+  if (events & g3StationDisconnected) {
+    g3RetryPending = true;
+    g3RetryAt = now + (g3FastRetries < fastRetryLimit ? fastRetryIntervalMs : retryIntervalMs);
+  }
+  if (g3WifiSetup != G3WifiSetup::Idle || !g3RetryPending || !due(now, g3RetryAt) || configRecovery ||
+      g3WifiWorkBusy())
+    return;
+
+  const char *ssid = config["wifi"]["ssid"] | "";
+  if (!*ssid || WiFi.scanComplete() == WIFI_SCAN_RUNNING)
+    return;
+
+  // Avoid interrupting an association while it is still acquiring an IP.
+  wifi_ap_record_t ap;
+  if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+    g3FastRetries = 0;
+    g3RetryPending = false;
+    return;
+  }
+  // Arduino's one-time fallback can still be connecting. Recheck later if
+  // the driver cannot accept a new request yet.
+  if (esp_wifi_connect() != ESP_OK) {
+    g3RetryAt = now + (g3FastRetries < fastRetryLimit ? g3StationBusyRetryMs : retryIntervalMs);
+    return;
+  }
+  if (g3FastRetries < fastRetryLimit)
+    ++g3FastRetries;
+  g3RetryPending = false;
+}
 #endif
 #include "lan_business.inc"
 #include "mqtt.inc"
@@ -255,6 +354,51 @@ static void g3OnlinePoll();
 #include "hub.inc"
 #include "home.inc"
 #endif
+static void pollWifi(uint32_t now) {
+  static uint32_t connectedSince = 0;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  if (!g3WifiWorkBusy())
+    pollG3WifiProvisioning(now);
+#endif
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  const bool apActive = WiFi.getMode() & WIFI_AP;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  constexpr uint32_t apCloseDelay = 5000;
+  const bool needsAp = g3NeedsProvisioning();
+  const bool allowApClose = !needsAp && g3WifiSetup == G3WifiSetup::Idle;
+#else
+  constexpr uint32_t apCloseDelay = 120000;
+  const bool allowApClose = !configRecovery;
+  constexpr bool needsAp = true;
+#endif
+
+  if (connected) {
+    if (!connectedSince) {
+      connectedSince = now;
+      if (MDNS.begin(deviceHostname.c_str())) {
+        MDNS.addService("http", "tcp", 80);
+        advertiseLanBusiness();
+      }
+    }
+    if (allowApClose && apActive && uint32_t(now - connectedSince) > apCloseDelay &&
+        uint32_t(now - connectAt) > apCloseDelay)
+      WiFi.softAPdisconnect(true);
+  } else {
+    if (connectedSince) {
+#ifdef IOTCLOUD_HUB
+      hubLanMdnsEnding();
+#endif
+      MDNS.end();
+      connectedSince = 0;
+    }
+    if (needsAp && !apActive)
+      startAccessPoint();
+  }
+#ifdef IOTCLOUD_BRY88_SCREEN
+  pollG3StationRetry(now);
+#endif
+}
+
 // Called by loop and by bounded HAP waits; never re-enters homeSpan.poll().
 static void pollLocalControls(uint32_t now){
   // GPIO34 reset key: hold >=5 s to reopen provisioning, retaining device settings.
@@ -288,7 +432,14 @@ void setup(){
   config.shrinkToFit();
   updatePassword();initLocalAuth();indicator=config["indicator"]|false;
   customLightSettings=daikin::readLightSettings(config["indicator_rules"],lightSettings);
-  WiFi.mode(WIFI_AP_STA);deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
+#ifdef IOTCLOUD_BRY88_SCREEN
+  WiFi.setAutoReconnect(false);
+  WiFi.onEvent(g3WifiEvent);
+  WiFi.mode(WIFI_STA);
+#else
+  WiFi.mode(WIFI_AP_STA);
+#endif
+  deviceId=WiFi.macAddress();deviceId.replace(":","");deviceId.toLowerCase();
   String hostnameModel=hardwareModel;hostnameModel.toLowerCase();
   char hostname[64];
   if(!ph_device_hostname(hostname,sizeof(hostname),hostnameModel.c_str(),deviceId.c_str())){Serial.println("Invalid factory MAC");while(true)delay(1000);}
@@ -315,6 +466,9 @@ void setup(){
 #endif
   if(httpd_start(&web,&server)==ESP_OK){
     httpd_uri_t root={};root.uri="/";root.method=HTTP_GET;root.handler=rootHandler;httpd_register_uri_handler(web,&root);
+#ifdef IOTCLOUD_BRY88_SCREEN
+    httpd_register_err_handler(web, HTTPD_404_NOT_FOUND, g3WifiPortalRedirect);
+#endif
     httpd_uri_t info={};info.uri="/api/v1/info";info.method=HTTP_GET;info.handler=infoHandler;httpd_register_uri_handler(web,&info);
     for(auto path:{"/api/v1/auth/login","/api/v1/auth/logout"}){httpd_uri_t auth={};auth.uri=path;auth.method=HTTP_POST;auth.handler=strstr(path,"logout")?logoutHandler:loginHandler;httpd_register_uri_handler(web,&auth);}
     httpd_uri_t status={};status.uri="/api/v1/status";status.method=HTTP_GET;status.handler=statusHandler;httpd_register_uri_handler(web,&status);
@@ -398,19 +552,10 @@ void loop(){
   if(mqttRestart){mqttRestart=false;startMqtt();}
   if(wifiRestart){wifiRestart=false;startWifi();}
   pollIndicators(now);
-  // G3 closes its recovery AP sooner to reduce startup load after joining Wi-Fi.
+  pollWifi(millis());
 #ifdef IOTCLOUD_BRY88_SCREEN
-  constexpr uint32_t apCloseDelay=5000;
-#else
-  constexpr uint32_t apCloseDelay=120000;
+  pollG3PortalDns(millis());
 #endif
-  static uint32_t connectedSince=0;
-  if(WiFi.status()==WL_CONNECTED){if(!connectedSince){connectedSince=now;if(MDNS.begin(deviceHostname.c_str())){MDNS.addService("http","tcp",80);advertiseLanBusiness();}}if(!configRecovery&&(WiFi.getMode()&WIFI_AP)&&uint32_t(now-connectedSince)>apCloseDelay&&uint32_t(now-connectAt)>apCloseDelay)WiFi.softAPdisconnect(true);}
-  else{if(connectedSince){
-#ifdef IOTCLOUD_HUB
-    hubLanMdnsEnding();
-#endif
-    MDNS.end();}connectedSince=0;if(!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
   #ifdef IOTCLOUD_HUB
   pollHome(millis());
   #endif
