@@ -46,6 +46,10 @@ static void buildBusinessState(JsonObject out,uint32_t now){
   out["ip"]=(WiFi.status()==WL_CONNECTED?WiFi.localIP():WiFi.softAPIP()).toString();out["rssi"]=WiFi.RSSI();
   out["ap_active"]=bool(WiFi.getMode()&WIFI_AP);out["ap_name"]=apName;
   out["wifi_password_set"]=strlen(config["wifi"]["password"]|"")>0;
+#ifdef IOTCLOUD_BRY88_SCREEN
+  out["wifi_trial_active"] = g3WifiTrialActive();
+  out["wifi_trial_status"] = g3WifiTrialStatus;
+#endif
   out["web_password_set"]=strlen(config["auth"]["password"]|"")>0;
   out["mqtt_host"]=config["mqtt"]["host"]|"";out["mqtt_port"]=config["mqtt"]["port"]|1883;
   out["mqtt_user"]=config["mqtt"]["user"]|"";out["mqtt_password_set"]=strlen(config["mqtt"]["password"]|"")>0;
@@ -481,6 +485,12 @@ static String execute(const String &body,bool binary=true){
           (knownFields(params,"|section||values|")&&values&&!values.isNull()&&values.size()>0);
       valid=valid&&validSection(section,values);
       if(!valid)code="invalid_params";
+#ifdef IOTCLOUD_BRY88_SCREEN
+      else if(section=="wifi"){
+        const char *password = values["password"] | (config["wifi"]["password"] | "");
+        code = queueG3WifiTrial(values["ssid"].as<const char *>(), password) ? "accepted" : "busy";
+      }
+#endif
       else{
         DynamicJsonDocument candidate(std::min(configCapacity,config.memoryUsage()+values.memoryUsage()+1024));candidate.set(config);
         if(section=="indicator_rules")candidate.remove("indicator_rules");

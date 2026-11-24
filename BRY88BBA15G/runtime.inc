@@ -99,7 +99,7 @@ static DynamicJsonDocument screenSnapshot(4096);
 static uint32_t screenLastRx = 0, screenFrames = 0, screenDataAt = 0,
                 screenNextSnapshot = 0, screenSnapshotAt = 0;
 static String screenMcuVersion, screenGalleryVersion, screenGateway;
-static bool screenSession = false, screenProvisioning = false;
+static bool screenSession = false;
 static const char *screenGatewaySource = "fallback";
 static constexpr const char *SCREEN_DEFAULT_GATEWAY = "020000000001";
 static uint8_t screenRaw[64];
@@ -502,8 +502,7 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
       screenReply(cmd, screenSession, 0x63);
   } else if (cmd == "sta_con") {
     if (arg.isEmpty()) {
-      if (WiFi.status() != WL_CONNECTED)
-        wifiRestart = true;
+      // The ESP32 already retries saved credentials on station disconnect.
       screenReply(cmd,
                   config["wifi"]["ssid"].is<const char *>() ||
                       WiFi.status() == WL_CONNECTED,
@@ -521,15 +520,8 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
         if (ok)
           password = String((const char *)p + pos, ps);
       }
-      if (ok) {
-        DynamicJsonDocument next(2048);
-        next.set(config);
-        next["wifi"]["ssid"] = ssid;
-        next["wifi"]["password"] = password;
-        ok = saveConfig(next);
-        if (ok)
-          wifiRestart = true;
-      }
+      if (ok)
+        ok = queueG3WifiTrial(ssid.c_str(), password.c_str());
       screenReply(cmd, ok, 0x21);
     }
   } else if (cmd == "router?" || cmd == "net_cfg?") {
@@ -549,12 +541,14 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
     else
       screenReply(cmd, false, 0x30);
   } else if (cmd == "ble_cfg") {
-    // Provisioning uses the shared management AP. BLUFI isn't advertised.
-    screenProvisioning = true;
-    startAccessPoint();
+    // Both "ble_cfg" and the stock MCU's "ble_cfg 1800" open WebUI setup.
+    startG3WifiProvisioning(millis());
+    // Stock firmware follows a BLE success reply with clear_net_cfg.
+    // Keep BLE unsupported while offering setup through the WebUI.
     screenReply(cmd, false, 0x70);
   } else if (cmd == "stop_ble_cfg") {
-    screenProvisioning = false;
+    if (g3WifiSetup == G3WifiSetup::Waiting)
+      g3WifiDeadline = millis();
     screenReply(cmd);
   } else if (cmd == "ble_state?")
     screenSend("+ble_state:0\r\n");
@@ -566,6 +560,9 @@ static void screenCommand(const uint8_t *p, size_t n, size_t payloadAt,
     next.remove("wifi");
     bool ok = saveConfig(next);
     if (ok) {
+      clearG3WifiTrial();
+      g3WifiTrialStatus = "idle";
+      WiFi.enableSTA(true);
       WiFi.disconnect(false, true);
       startAccessPoint();
     }
