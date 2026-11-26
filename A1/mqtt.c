@@ -490,7 +490,7 @@ static bool feature_ingress_topic(const char *topic, size_t length, bool retaine
         leaf_length -= 18;
     }
     static const char *const leaves[] = {
-        "command", "fan/set", "fan/percentage/set", "light/set", "child_lock/set",
+        "command", "ha/command", "fan/set", "fan/percentage/set", "light/set", "child_lock/set",
         "led_always_on/set", "binding/get", "binding/set", "binding/state",
         "linkage/get", "linkage/set", "linkage/state", "light/config/get",
         "light/config/set", "light/config/state", "schedule/get", "schedule/set",

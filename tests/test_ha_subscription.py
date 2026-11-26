@@ -103,6 +103,14 @@ int main(void){
   MQTTString wrong_topic={0};wrong_topic.cstring=wrong;
   MQTTMessage wrong_message={0};wrong_message.payload=(void*)json;wrong_message.payloadlen=sizeof(json)-1;
   MessageData wrong_data={&wrong_message,&wrong_topic};assert(!ingress_accept(&wrong_data,ha.handler));
+  snprintf(feature_filters[0],sizeof(feature_filters[0]),"%s/linkage/#",base);
+  snprintf(wrong,sizeof(wrong),"%s/linkage/ha/command",base);
+  assert(ingress_accept(&wrong_data,feature_command));
+  wrong_message.retained=true;assert(!ingress_accept(&wrong_data,feature_command));
+  wrong_message.retained=false;
+  snprintf(feature_filters[0],sizeof(feature_filters[0]),"group/room/#");
+  snprintf(wrong,sizeof(wrong),"group/room/ha/command");
+  assert(ingress_accept(&wrong_data,feature_command));
 #endif
   unsigned h=ha_calls,n=native_calls;
   deliver(&ha,json,sizeof(json)-1,false,false);deliver(&ha,json,sizeof(json)-1,false,true);assert(ha_calls==h+2&&native_calls==n);
